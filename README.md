@@ -153,3 +153,28 @@ python manage.py runserver
 ```
 
 Open `http://127.0.0.1:8000/` to view the application.
+
+## GitHub Codespaces preview (development only)
+
+From the repository root in a Codespaces terminal, after the setup and
+migration steps above have been completed:
+
+```bash
+bash scripts/start_codespaces_preview.sh
+```
+
+The script serves the app on port `8001`. It exits with a message if it is not
+run in Codespaces or if port `8001` is already in use; it never kills existing
+processes. It sets `DJANGO_ENVIRONMENT=development` and `DJANGO_DEBUG=true`,
+and limits `DJANGO_ALLOWED_HOSTS` and `DJANGO_CSRF_TRUSTED_ORIGINS` to the
+Codespaces forwarded hostname (derived from `CODESPACE_NAME` and
+`GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN`) and `https://localhost:8001`. It
+does not create, migrate, seed, reset, or copy a database.
+
+Open the forwarded address printed by the script. Keep the port visibility set
+to **Private**; never make it Public. `DEBUG=True` is acceptable only for this
+development preview with synthetic data.
+
+Stop the server with `Ctrl+C`. When finished, stop the Codespace (Command
+Palette: **Codespaces: Stop Current Codespace**, or from github.com/codespaces)
+so the forwarded port is no longer served.
