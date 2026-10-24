@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Dashboard | WHT Classification{% endblock %}
+{% block content %}
+<h1>Invoice dashboard</h1>
+<p class="subtitle">Classify active invoices, review completed history, and resolve administrator exceptions where authorized.</p>
+<div class="cards">
+    {% for label, count, url in cards %}
+        <a class="card" href="{{ url }}">
+            <span class="card-label">{{ label }}</span>
+            <span class="card-value">{{ count }}</span>
+        </a>
+    {% endfor %}
+</div>
+{% endblock %}

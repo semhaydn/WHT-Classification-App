@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}Document {{ accounting_document_number }} | WHT Classification{% endblock %}
+{% block content %}
+<p><a href="{% url 'open-item-list' %}">← Back to Open Items</a></p>
+<h1>Document {{ accounting_document_number }}</h1>
+<p class="subtitle">{{ entity_code }} · {{ open_items|length }} line{{ open_items|length|pluralize }}</p>
+{% if can_finalize_invoice %}
+    <form method="post" action="{% url 'finalize-invoice' invoice_anchor.pk %}" class="panel" style="margin-bottom: 18px;">
+        {% csrf_token %}
+        <p>All required lines are classified and their WHT determinations are valid. Reconciliation differences remain visible but do not block finalization.</p>
+        <button type="submit">Finalize invoice</button>
+    </form>
+{% elif not can_reopen_invoice and completion_blockers %}
+    <section class="panel" style="margin-bottom: 18px;">
+        <h2>Finalization pending</h2>
+        <ul>{% for blocker in completion_blockers %}<li>{{ blocker }}</li>{% endfor %}</ul>
+    </section>
+{% endif %}
+{% if can_reopen_invoice %}
+    <form method="post" action="{% url 'reopen-invoice' invoice_anchor.pk %}" class="panel" style="margin-bottom: 18px;">
+        {% csrf_token %}
+        <button type="submit">Reopen entire invoice</button>
+    </form>
+{% endif %}
+{% if snapshots %}
+    <section class="panel" style="margin-bottom: 18px;">
+        <h2>Completed snapshot history</h2>
+        <div class="table-wrap">
+            <table>
+                <thead><tr><th>Version</th><th>State</th><th>Completed by</th><th>Completed at</th><th>Calculated WHT</th><th>Posted WHT</th><th>Difference</th></tr></thead>
+                <tbody>
+                    {% for snapshot in snapshots %}
+                        <tr>
+                            <td>{{ snapshot.calculation_version }}</td>
+                            <td>{% if snapshot.is_current %}Current{% else %}Historical{% endif %}</td>
+                            <td>{{ snapshot.completed_by|default:"—" }}</td>
+                            <td>{{ snapshot.completed_at }}</td>
+                            <td>{% if snapshot.calculated_wht != None %}{{ snapshot.calculated_wht|floatformat:2 }}{% else %}—{% endif %}</td>
+                            <td>{% if snapshot.booked_wht != None %}{{ snapshot.booked_wht|floatformat:2 }}{% else %}—{% endif %}</td>
+                            <td>{% if snapshot.modification_required != None %}{{ snapshot.modification_required|floatformat:2 }}{% else %}—{% endif %}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+{% endif %}
+{% if vendor_item %}
+    <div class="description-box" style="margin-bottom: 18px;">
+        <strong>Invoice vendor</strong>
+        {{ vendor_item.vendor_number|default:"—" }}{% if vendor_item.vendor_name %} · {{ vendor_item.vendor_name }}{% endif %}
+    </div>
+{% endif %}
+{% if reconciliation %}
+    <section class="panel" style="margin-bottom: 18px;">
+        <h2>WHT reconciliation</h2>
+        <p><strong>Status:</strong> {{ reconciliation_status_label }}</p>
+        <p><strong>Calculated WHT:</strong>
+            {% if reconciliation.calculated_wht != None %}{{ reconciliation.calculated_wht|floatformat:2 }} {{ reconciliation.currency }}{% else %}Pending / Provisional{% endif %}
+        </p>
+        <p><strong>Signed WHT posted:</strong>
+            {% if reconciliation.posted_wht != None %}{{ reconciliation.posted_wht|floatformat:2 }} {{ reconciliation.currency }}{% else %}Pending / Provisional{% endif %}
+        </p>
+        <p><strong>Difference:</strong>
+            {% if reconciliation.difference != None %}{{ reconciliation.difference|floatformat:2 }} {{ reconciliation.currency }}{% else %}Pending / Provisional{% endif %}
+        </p>
+    </section>
+{% endif %}
+<div class="panel">
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>Line</th><th>Vendor code</th><th>Vendor name</th><th>GL account</th><th>Posting date</th><th>Amount</th><th>Classifiable</th><th>Status</th><th></th></tr></thead>
+            <tbody>
+            {% for open_item in open_items %}
+                <tr>
+                    <td><strong>{{ open_item.line_number }}</strong></td>
+                    <td>{{ open_item.vendor_number|default:"—" }}</td>
+                    <td>{{ open_item.vendor_name|default:"—" }}</td>
+                    <td>{{ open_item.gl_account }}</td>
+                    <td>{{ open_item.posting_date }}</td>
+                    <td>{{ open_item.document_currency_amount|floatformat:"2" }} {{ open_item.document_currency }}</td>
+                    <td>{% if open_item.is_classifiable %}Yes{% else %}No{% endif %}</td>
+                    <td><span class="status status-{{ open_item.status|lower }}">{{ open_item.get_status_display }}</span></td>
+                    <td><a href="{% url 'open-item-detail' open_item.pk %}">View line →</a></td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

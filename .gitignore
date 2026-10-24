@@ -1,0 +1,54 @@
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+db.sqlite3
+*.sqlite3
+staticfiles/
+media/
+dist/
+build/
+*.egg-info/
+
+# Local environment files; keep only safe templates
+.env*
+!.env.example
+!.env.*.example
+
+# Databases, SQLite sidecars, and backups
+*.sqlite*
+*.db
+*.db-*
+backups/
+**/backups/
+*.bak
+*.backup
+*.old
+
+# Credentials, secrets, private keys, and certificates
+credentials/
+secrets/
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+*.der
+*.p7b
+*.p7c
+
+# Logs, temporary files, and generated test/lint artifacts
+*.log
+logs/
+*.tmp
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+
+# Import data pending provenance review
+/WHT-TEST-IMPORTS/

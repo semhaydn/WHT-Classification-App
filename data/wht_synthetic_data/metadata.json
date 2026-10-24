@@ -1,0 +1,19 @@
+{
+  "seed": 747,
+  "synthetic": true,
+  "source_rows": {
+    "wht_mapping": 51,
+    "cost_decisions": 613,
+    "countries": 2324,
+    "open_items": 42,
+    "material_data": 234
+  },
+  "output_rows": {
+    "countries": 2324,
+    "wht_mapping": 51,
+    "material_data": 234,
+    "cost_type_decisions": 613,
+    "open_line_items": 42
+  },
+  "note": "All direct identifiers, supplier names, document references and free-text descriptions were replaced. Structural relationships were retained with synthetic keys."
+}

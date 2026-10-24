@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+
+{% block title %}Import Center | WHT Classification{% endblock %}
+
+{% block content %}
+<div class="detail-hero">
+    <div>
+        <p class="eyebrow">Data management</p>
+        <h1>Import Center</h1>
+        <p class="subtitle">Preview and import purchasing material data and accounting lines.</p>
+    </div>
+</div>
+
+<section class="panel">
+    <h2>Upload CSV files</h2>
+    <p>When uploading both files, MaterialData is imported first, then Open Line Items are matched using Purchasing Document + Item.</p>
+    <p class="muted">You may upload either file alone. Open items uploaded without MaterialData use existing purchasing data; any missing match remains visible for follow-up. Supplier countries, WHT mappings, Cost Types, and historical Cost Type suggestions are not changed by this workflow.</p>
+    <form method="post" enctype="multipart/form-data">
+        {% csrf_token %}
+        {{ form.non_field_errors }}
+        <div class="filters">
+            <label for="{{ form.material_data_file.id_for_label }}">
+                {{ form.material_data_file.label }}
+                {{ form.material_data_file }}
+                <span>{{ form.material_data_file.help_text }}</span>
+                {{ form.material_data_file.errors }}
+            </label>
+            <label for="{{ form.open_items_file.id_for_label }}">
+                {{ form.open_items_file.label }}
+                {{ form.open_items_file }}
+                <span>{{ form.open_items_file.help_text }}</span>
+                {{ form.open_items_file.errors }}
+            </label>
+        </div>
+        <p class="muted">CSV files only. Each file may be up to {{ max_import_file_size_mb|default:"10" }} MB. Files are staged privately and removed after import or expiry.</p>
+        <button type="submit">Validate and preview</button>
+    </form>
+</section>
+
+<section class="panel" style="margin-top: 24px;">
+    <h2>Recent import history</h2>
+    {% if batches %}
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr><th>Type</th><th>File</th><th>Submitted by</th><th>Date</th><th>Rows</th><th>Result</th></tr>
+                </thead>
+                <tbody>
+                    {% for batch in batches %}
+                    <tr>
+                        <td>{{ batch.get_import_type_display }}</td>
+                        <td><a href="{% url 'import-batch-detail' batch.pk %}">{{ batch.source_filename }}</a></td>
+                        <td>{% if batch.uploaded_by %}{{ batch.uploaded_by.username }}{% else %}Management command{% endif %}</td>
+                        <td>{{ batch.completed_at|default:batch.started_at }}</td>
+                        <td>{{ batch.rows_read }}</td>
+                        <td>
+                            {% if batch.completed_at %}Completed{% else %}In progress / incomplete{% endif %}
+                            {% if batch.rows_rejected %} · {{ batch.rows_rejected }} rejected{% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <p class="muted">No MaterialData or open-item imports have been recorded yet.</p>
+    {% endif %}
+</section>
+{% endblock %}

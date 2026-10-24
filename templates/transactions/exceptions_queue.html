@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}Administrator Exceptions | WHT Classification{% endblock %}
+{% block content %}
+<h1>Administrator Exceptions</h1>
+<p class="muted">Review flags, excluded lines, and unresolved or stale WHT determinations.</p>
+
+{% if entries %}
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Document</th>
+                    <th>Line</th>
+                    <th>Supplier</th>
+                    <th>Cost Type</th>
+                    <th>Issue</th>
+                    <th>Status</th>
+                    <th>Created</th>
+                    <th>Originator</th>
+                    <th>Reason / explanation</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for entry in entries %}
+                    <tr>
+                        <td>
+                            <a href="{% url 'open-item-document' entry.open_item.entity_code entry.open_item.accounting_document_number %}">
+                                {{ entry.open_item.entity_code }} / {{ entry.open_item.accounting_document_number }}
+                            </a>
+                        </td>
+                        <td>
+                            <a href="{% url 'open-item-detail' entry.open_item.pk %}">
+                                {{ entry.open_item.line_number }}
+                            </a>
+                        </td>
+                        <td>{{ entry.open_item.vendor_number|default:"—" }}{% if entry.open_item.vendor_name %}<br>{{ entry.open_item.vendor_name }}{% endif %}</td>
+                        <td>{% with decision=entry.open_item.classification_decisions.all|first %}{{ decision.final_cost_type.code|default:"—" }}{% endwith %}</td>
+                        <td>{{ entry.issue_type }}</td>
+                        <td>{{ entry.status }}</td>
+                        <td>{{ entry.created_at }}</td>
+                        <td>{{ entry.requested_by|default:"System" }}</td>
+                        <td>{{ entry.reason }}</td>
+                        <td>
+                            {% if entry.completed %}
+                                <span class="muted">Completed history is read-only; reopening is not available.</span>
+                            {% elif entry.record and entry.record.status == "OPEN" %}
+                                <form method="post" action="{% url 'resolve-line-flag' entry.record.pk %}">
+                                    {% csrf_token %}
+                                    <label>Decision <textarea name="decision" required rows="2"></textarea></label>
+                                    <label>Action
+                                        <select name="action">
+                                            <option value="CLEAR">Clear flag</option>
+                                            <option value="EXCLUDE">Exclude line</option>
+                                        </select>
+                                    </label>
+                                    <button type="submit">Resolve flag</button>
+                                </form>
+                            {% elif entry.determination %}
+                                <form method="post" action="{% url 'resolve-wht-exception' entry.open_item.pk %}">
+                                    {% csrf_token %}
+                                    <label>Treatment
+                                        <select name="treatment">
+                                            <option value="RATE">One-off WHT rate</option>
+                                            <option value="NO_WHT">Explicit No WHT</option>
+                                        </select>
+                                    </label>
+                                    <label>Rate <input type="number" name="manual_rate" min="0" max="9.999999" step="0.000001"></label>
+                                    <label>Reason <textarea name="reason" required rows="2"></textarea></label>
+                                    <button type="submit">Resolve WHT</button>
+                                </form>
+                                <form method="post" action="{% url 'recalculate-wht' entry.open_item.pk %}">
+                                    {% csrf_token %}
+                                    <button type="submit">Recalculate after reference correction</button>
+                                </form>
+                            {% elif entry.issue_type == "WHT MISSING" %}
+                                <form method="post" action="{% url 'resolve-wht-exception' entry.open_item.pk %}">
+                                    {% csrf_token %}
+                                    <label>Treatment
+                                        <select name="treatment">
+                                            <option value="RATE">One-off WHT rate</option>
+                                            <option value="NO_WHT">Explicit No WHT</option>
+                                        </select>
+                                    </label>
+                                    <label>Rate <input type="number" name="manual_rate" min="0" max="9.999999" step="0.000001"></label>
+                                    <label>Reason <textarea name="reason" required rows="2"></textarea></label>
+                                    <button type="submit">Resolve WHT</button>
+                                </form>
+                                <form method="post" action="{% url 'recalculate-wht' entry.open_item.pk %}">
+                                    {% csrf_token %}
+                                    <button type="submit">Recalculate after reference correction</button>
+                                </form>
+                            {% else %}
+                                <span class="muted">No direct action for this record.</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+{% else %}
+    <section class="detail-card">
+        <h2>No action required</h2>
+        <p class="muted">There are currently no unresolved flags or WHT determination exceptions.</p>
+    </section>
+{% endif %}
+{% endblock %}

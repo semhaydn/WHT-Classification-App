@@ -1,0 +1,238 @@
+{% extends "base.html" %}
+{% block title %}Line {{ open_item.line_number }} · {{ open_item.accounting_document_number }} | WHT Classification{% endblock %}
+{% block content %}
+<p><a href="{% url 'open-item-document' open_item.entity_code open_item.accounting_document_number %}">← Back to document {{ open_item.accounting_document_number }}</a></p>
+
+<section class="detail-hero">
+    <div>
+        <p class="eyebrow">Transaction line</p>
+        <h1>{{ open_item.accounting_document_number }} <span class="muted">/ Line {{ open_item.line_number }}</span></h1>
+        <p class="hero-meta">{{ open_item.entity_code }} · Posted {{ open_item.posting_date }} · Reference {{ open_item.document_reference }}</p>
+    </div>
+    <span class="status hero-status status-{{ open_item.status|lower }}">{{ open_item.get_status_display }}</span>
+</section>
+
+{% if completion_blockers %}
+    <section class="detail-card" style="margin-bottom: 16px;">
+        <h2>Invoice completion blockers</h2>
+        <ul>
+            {% for blocker in completion_blockers %}
+                <li>{{ blocker }}</li>
+            {% endfor %}
+        </ul>
+    </section>
+{% endif %}
+
+<div class="detail-grid">
+    <section class="detail-card">
+        <h2>Transaction overview</h2>
+        <dl class="data-list">
+            <div><dt>Document type</dt><dd>{{ open_item.document_type }}</dd></div>
+            <div><dt>Document date</dt><dd>{{ open_item.document_date }}</dd></div>
+            <div><dt>Posting date</dt><dd>{{ open_item.posting_date }}</dd></div>
+            <div><dt>Vendor</dt><dd>{{ open_item.vendor_number|default:"—" }}{% if open_item.vendor_name %}<br><span class="muted">{{ open_item.vendor_name }}</span>{% endif %}</dd></div>
+            <div><dt>GL account</dt><dd>{{ open_item.gl_account }}<br><span class="muted">{{ open_item.gl_account_description }}</span></dd></div>
+            <div><dt>Amount</dt><dd class="amount">{{ open_item.document_currency_amount|floatformat:"2" }} {{ open_item.document_currency }}</dd></div>
+        </dl>
+        {% if open_item.text %}
+            <div class="description-box" style="margin-top: 18px;">
+                <strong>Transaction text</strong>
+                {{ open_item.text }}
+            </div>
+        {% endif %}
+    </section>
+
+    <section class="detail-card">
+        <h2>Purchasing and material</h2>
+        <dl class="data-list">
+            <div><dt>Purchasing document</dt><dd>{{ open_item.purchasing_document|default:"—" }}</dd></div>
+            <div><dt>Purchasing item</dt><dd>{{ open_item.purchasing_document_item|default:"—" }}</dd></div>
+            <div><dt>Material</dt><dd>{{ open_item.material|default:"—" }}</dd></div>
+            <div><dt>Material group</dt><dd>{{ open_item.material_group|default:"—" }}</dd></div>
+        </dl>
+        {% if material_match.status == "MATCHED" %}
+            <div class="match-message matched" style="margin-top: 18px;">
+                <strong>Material matched</strong>
+                <br>{{ matched_material.material_data_key }}
+            </div>
+            <div class="description-box" style="margin-top: 14px;">
+                <strong>Cost Description from MaterialData</strong>
+                {{ cost_description }}
+            </div>
+            <dl class="data-list" style="margin-top: 18px;">
+                <div><dt>Plant</dt><dd>{{ matched_material.plant }}</dd></div>
+                <div><dt>Supplier / supplying plant</dt><dd>{{ matched_material.supplier_or_supplying_plant }}</dd></div>
+                <div><dt>Net price</dt><dd>{{ matched_material.net_price|floatformat:"2" }} {{ matched_material.currency }}</dd></div>
+                <div><dt>Net order value</dt><dd>{{ matched_material.net_order_value|floatformat:"2" }} {{ matched_material.currency }}</dd></div>
+                <div><dt>Purchasing group</dt><dd>{{ matched_material.purchasing_group }}</dd></div>
+                <div><dt>Material group</dt><dd>{{ matched_material.material_group }}</dd></div>
+            </dl>
+        {% elif material_match.status == "AMBIGUOUS" %}
+            <div class="match-message ambiguous" style="margin-top: 18px;">
+                <strong>Material match requires review</strong>
+                <br>{{ material_match.candidate_count }} possible MaterialData records were found. No Cost Description was selected automatically. Correct the source data to resolve this exception.
+            </div>
+        {% else %}
+            <div class="match-message not-found" style="margin-top: 18px;">
+                <strong>No MaterialData match</strong>
+                <br>Cost Description is unavailable. Classification may continue; correct the purchasing data to clear this exception.
+            </div>
+        {% endif %}
+    </section>
+
+    <section class="detail-card">
+        <h2>Cost Type classification</h2>
+        {% if not open_item.is_classifiable %}
+            <div class="match-message not-found">
+                <strong>Not a classifiable expense line</strong>
+                <br>Zero-amount lines and lines on G/L accounts configured as excluded are not classified. Their unchanged line status does not by itself block invoice finalization.
+            </div>
+        {% endif %}
+        {% if current_decision %}
+            <div class="description-box">
+                <strong>Current Final Cost Type</strong>
+                {{ current_decision.final_cost_type.name }}
+                <br><span class="muted">{{ current_decision.final_cost_type.code }}</span>
+            </div>
+            <p><strong>Decision reason:</strong> {{ current_decision.classification_reason }}</p>
+        {% else %}
+            <p class="muted">No Final Cost Type has been selected.</p>
+        {% endif %}
+        {% if can_classify and open_item.status != 'COMPLETED' and open_item.status != 'REVIEWED' and open_item.status != 'UNDER_REVIEW' %}
+            <form method="post">
+                {% csrf_token %}
+                {{ classification_form.as_p }}
+                <div class="form-actions"><button type="submit">Save Final Cost Type</button></div>
+            </form>
+        {% elif current_decision %}
+            <p class="muted">This decision is read-only for your role or workflow status.</p>
+        {% endif %}
+    </section>
+
+    <section class="detail-card">
+        <h2>WHT determination</h2>
+        {% if latest_wht %}
+            <div class="match-message {% if latest_wht_status_label == 'Matched' or latest_wht_status_label == 'No WHT' or latest_wht_status_label == 'Resolved one-off override' or latest_wht_status_label == 'Resolved one-off No WHT' %}matched{% else %}ambiguous{% endif %}">
+                <strong>{{ latest_wht_status_label }}</strong>
+                {% if latest_wht.rate_source == "MANUAL" or latest_wht.rate_source == "ADMIN_NO_WHT" %}
+                    <br>One-off Administrator resolution; no permanent mapping was created.
+                    {% if latest_wht.manual_override_reason %}<br>Reason: {{ latest_wht.manual_override_reason }}{% endif %}
+                {% endif %}
+                {% if latest_wht.wht_amount_snapshot != None %}
+                    <br>WHT amount: {{ latest_wht.wht_amount_snapshot|floatformat:"2" }} {{ latest_wht.currency_snapshot }}
+                    <br>Rate: {{ latest_wht.wht_rate_snapshot|floatformat:"2" }} · Base: {{ latest_wht.wht_base_snapshot|floatformat:"2" }}
+                {% endif %}
+            </div>
+            <p class="muted">Calculated {{ latest_wht.calculated_at }}</p>
+        {% else %}
+            <p class="muted">No WHT determination has been calculated.</p>
+        {% endif %}
+        {% if current_decision and can_determine_wht and open_item.status != 'REVIEWED' %}
+            <form method="post" action="{% url 'determine-wht' open_item.pk %}">
+                {% csrf_token %}
+                <button type="submit">Calculate WHT</button>
+            </form>
+        {% endif %}
+        {% if can_access_exceptions and current_decision and open_item.status != 'REVIEWED' %}
+            <form method="post" action="{% url 'resolve-wht-exception' open_item.pk %}">
+                {% csrf_token %}
+                <label>Administrator treatment
+                    <select name="treatment">
+                        <option value="RATE">One-off WHT rate</option>
+                        <option value="NO_WHT">Explicit No WHT</option>
+                    </select>
+                </label>
+                <label>One-off rate <input type="number" name="manual_rate" min="0" max="9.999999" step="0.000001"></label>
+                <label>Mandatory reason <textarea name="reason" required rows="2"></textarea></label>
+                <button type="submit">Resolve WHT exception</button>
+            </form>
+            <form method="post" action="{% url 'recalculate-wht' open_item.pk %}">
+                {% csrf_token %}
+                <button type="submit">Explicitly recalculate after reference correction</button>
+            </form>
+        {% endif %}
+    </section>
+
+    <section class="detail-card full-width">
+        <h2>Administrator flags and line exclusions</h2>
+        {% if can_reopen_line %}
+            <form method="post" action="{% url 'reopen-line' open_item.pk %}">
+                {% csrf_token %}
+                <button type="submit">Reopen this line only</button>
+            </form>
+        {% endif %}
+        {% if has_active_line_exclusion %}
+            <div class="match-message not-found">
+                <strong>This line is excluded from normal classification.</strong>
+            </div>
+        {% endif %}
+        <ul class="history-list">
+            {% for record in exception_records %}
+                <li>
+                    <strong>{{ record.get_issue_type_display }} — {{ record.get_status_display }}</strong>
+                    <br>{{ record.reason }}
+                    <br><span class="muted">{{ record.created_at }} · {{ record.created_by }}</span>
+                    {% if record.resolved_at %}
+                        <br><strong>Administrative decision:</strong> {{ record.resolution_decision }}
+                        <br><span class="muted">{{ record.resolved_at }} · {{ record.resolved_by }}</span>
+                    {% endif %}
+                </li>
+            {% empty %}
+                <li class="muted">No flags or line exclusions recorded.</li>
+            {% endfor %}
+        </ul>
+        {% if can_flag_line and not has_open_line_flag and not has_completed_snapshot %}
+            <form method="post" action="{% url 'flag-line' open_item.pk %}">
+                {% csrf_token %}
+                {{ line_flag_form.as_p }}
+                <button type="submit">Flag for Administrator review</button>
+            </form>
+        {% endif %}
+        {% if can_exclude_line and open_item.is_classifiable and not has_completed_snapshot %}
+            <form method="post" action="{% url 'exclude-line' open_item.pk %}">
+                {% csrf_token %}
+                {{ line_exclusion_form.as_p }}
+                <button type="submit">Exclude this line</button>
+            </form>
+        {% endif %}
+    </section>
+
+    {% if request.user.is_authenticated %}
+        <section class="detail-card full-width">
+            <h2>Classification</h2>
+            {% if open_item.status == 'IN_CLASSIFICATION' and can_complete_classification %}
+                <form method="post" action="{% url 'complete-classification' open_item.pk %}">
+                    {% csrf_token %}
+                    <button type="submit">Complete classification</button>
+                </form>
+            {% endif %}
+        </section>
+    {% endif %}
+
+    <section class="detail-card">
+        <h2>Decision history</h2>
+        <ul class="history-list">
+            {% for decision in decision_history %}
+                <li>
+                    <strong>{{ decision.final_cost_type.name }}</strong>
+                    {% if decision.is_current %}<span class="status status-approved">Current</span>{% endif %}
+                    <br><span class="muted">{{ decision.decided_at }} · {{ decision.classification_reason }}</span>
+                </li>
+            {% empty %}
+                <li class="muted">No classification decision saved.</li>
+            {% endfor %}
+        </ul>
+    </section>
+
+    <section class="detail-card full-width">
+        <h2>Audit and review history</h2>
+        <ul class="history-list">
+            {% for event in audit_events %}
+                <li><strong>{{ event.get_event_type_display }}</strong><br><span class="muted">{{ event.created_at }} · {{ event.performed_by|default:"System" }}{% if event.comment %} · {{ event.comment }}{% endif %}</span></li>
+            {% empty %}
+                <li class="muted">No audit events recorded.</li>
+            {% endfor %}
+        </ul>
+    </section>
+</div>
+{% endblock %}

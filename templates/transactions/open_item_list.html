@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}Active Invoices | WHT Classification{% endblock %}
+{% block content %}
+<h1>Active Invoices</h1>
+<p class="subtitle">Invoices that do not have a current completed snapshot. Reopened invoices return to this list.</p>
+<div class="panel">
+    <form class="filters" method="get">
+        <label>Entity <input name="entity" value="{{ filters.entity }}"></label>
+        <label>Supplier ID or name <input name="supplier" value="{{ filters.supplier }}"></label>
+        <label>Accounting document number <input name="document" value="{{ filters.document }}"></label>
+        <label>Posting date from <input type="date" name="date_from" value="{{ filters.date_from }}"></label>
+        <label>Posting date to <input type="date" name="date_to" value="{{ filters.date_to }}"></label>
+        <label>Supplier country <input name="country" maxlength="2" value="{{ filters.country }}"></label>
+        <label>Document currency <input name="currency" maxlength="3" value="{{ filters.currency }}"></label>
+        <label>Workflow status
+            <select name="status">
+                <option value="">All workflow statuses</option>
+                {% for value, label in status_choices %}
+                    <option value="{{ value }}" {% if filters.status == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>Reconciliation
+            <select name="reconciliation_status">
+                <option value="">All reconciliation statuses</option>
+                {% for value, label in reconciliation_choices %}
+                    <option value="{{ value }}" {% if filters.reconciliation_status == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>Outstanding exceptions
+            <select name="exception">
+                <option value="">All invoices</option>
+                <option value="1" {% if filters.exception == "1" %}selected{% endif %}>Has exceptions</option>
+                <option value="0" {% if filters.exception == "0" %}selected{% endif %}>No exceptions</option>
+            </select>
+        </label>
+        <button type="submit">Apply filters</button>
+        <a href="{% url 'open-item-list' %}">Clear filters</a>
+    </form>
+    <p>
+        <a href="{% url 'open-item-export' %}{% if filter_query %}?{{ filter_query }}{% endif %}">Download Active Invoices (Excel)</a>
+    </p>
+    <p class="muted">{{ page_obj.paginator.count }} active invoice{{ page_obj.paginator.count|pluralize }} found.</p>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Entity</th>
+                    <th>Accounting Document Number</th>
+                    <th>Supplier ID / Name</th>
+                    <th>Document Date</th>
+                    <th>Posting Date</th>
+                    <th>Document Currency</th>
+                    <th>Invoice Amount</th>
+                    <th>Workflow Status</th>
+                    <th>Lines Requiring Work</th>
+                    <th>Outstanding Exceptions</th>
+                    <th>Calculated WHT</th>
+                    <th>Signed WHT Posted</th>
+                    <th>Difference</th>
+                    <th>Reconciliation</th>
+                    <th>Completion / Exception Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for document in page_obj %}
+                    <tr>
+                        <td>{{ document.entity_code }}</td>
+                        <td><a href="{% url 'open-item-document' document.entity_code document.accounting_document_number %}">{{ document.accounting_document_number }}</a></td>
+                        <td>{{ document.supplier }}{% if document.vendor_name %}<br><span class="muted">{{ document.vendor_name }}</span>{% endif %}</td>
+                        <td>{{ document.document_date|default:"—" }}</td>
+                        <td>{{ document.posting_date|default:"—" }}</td>
+                        <td>{{ document.document_currency|default:"—" }}</td>
+                        <td>{% if document.document_amount != None %}{{ document.document_amount|floatformat:2 }}{% else %}—{% endif %}</td>
+                        <td><span class="status {% if document.workflow_status == 'Blocked' %}status-returned{% elif document.workflow_status == 'Review complete' %}status-approved{% else %}status-in_classification{% endif %}">{{ document.workflow_status }}</span></td>
+                        <td>{{ document.lines_requiring_work }}</td>
+                        <td>
+                            {% if document.outstanding_exception_count %}
+                                <a href="{% url 'open-item-detail' document.exception_item_id %}">{{ document.outstanding_exception_count }} — view affected line</a>
+                            {% else %}0{% endif %}
+                        </td>
+                        <td>{% if document.calculated_wht != None %}{{ document.calculated_wht|floatformat:2 }}{% else %}Pending{% endif %}</td>
+                        <td>{% if document.posted_wht != None %}{{ document.posted_wht|floatformat:2 }}{% else %}Pending{% endif %}</td>
+                        <td>{% if document.difference != None %}{{ document.difference|floatformat:2 }}{% else %}—{% endif %}</td>
+                        <td>{{ document.reconciliation_status }}</td>
+                        <td>{{ document.completion_status }}</td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="15">No active invoices match the selected filters.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% if page_obj.has_other_pages %}
+        <div class="pagination">
+            {% if page_obj.has_previous %}
+                <a href="?{% if filter_query %}{{ filter_query }}&{% endif %}page={{ page_obj.previous_page_number }}">← Previous</a>
+            {% else %}<span></span>{% endif %}
+            <span class="muted">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+            {% if page_obj.has_next %}
+                <a href="?{% if filter_query %}{{ filter_query }}&{% endif %}page={{ page_obj.next_page_number }}">Next →</a>
+            {% endif %}
+        </div>
+    {% endif %}
+</div>
+{% endblock %}

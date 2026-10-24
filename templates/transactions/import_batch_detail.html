@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block title %}Import Batch | WHT Classification{% endblock %}
+
+{% block content %}
+<div class="detail-hero">
+    <div>
+        <p class="eyebrow">Import history</p>
+        <h1>{{ batch.get_import_type_display }}</h1>
+        <p class="subtitle">{{ batch.source_filename }}</p>
+    </div>
+    <a href="{% url 'import-center' %}">Back to Import Center</a>
+</div>
+
+<section class="panel">
+    <dl class="data-list">
+        <div><dt>Status</dt><dd>{% if batch.completed_at %}Completed{% else %}Incomplete{% endif %}</dd></div>
+        <div><dt>Submitted by</dt><dd>{% if batch.uploaded_by %}{{ batch.uploaded_by.username }}{% else %}Management command{% endif %}</dd></div>
+        <div><dt>Started</dt><dd>{{ batch.started_at }}</dd></div>
+        <div><dt>Completed</dt><dd>{{ batch.completed_at|default:"—" }}</dd></div>
+        <div><dt>Rows read</dt><dd>{{ batch.rows_read }}</dd></div>
+        <div><dt>Created</dt><dd>{{ batch.rows_created }}</dd></div>
+        <div><dt>Updated</dt><dd>{{ batch.rows_updated }}</dd></div>
+        <div><dt>Skipped</dt><dd>{{ batch.rows_skipped }}</dd></div>
+        <div><dt>Rejected</dt><dd>{{ batch.rows_rejected }}</dd></div>
+    </dl>
+</section>
+
+{% if material_match_counts %}
+<section class="panel" style="margin-top: 20px;">
+    <h2>Material match outcomes</h2>
+    <ul>
+        <li>{{ material_match_counts.matched }} matched</li>
+        <li>{{ material_match_counts.not_found }} not found</li>
+        <li>{{ material_match_counts.ambiguous }} ambiguous</li>
+    </ul>
+</section>
+{% endif %}
+
+<section class="panel" style="margin-top: 20px;">
+    <h2>Validation errors</h2>
+    {% if batch.validation_errors.all %}
+        <div class="table-wrap">
+            <table>
+                <thead><tr><th>CSV row</th><th>Error</th></tr></thead>
+                <tbody>
+                    {% for error in batch.validation_errors.all %}
+                        <tr><td>{{ error.row_number }}</td><td>{{ error.message }}</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <p class="muted">No rejected rows were recorded for this batch.</p>
+    {% endif %}
+</section>
+{% endblock %}

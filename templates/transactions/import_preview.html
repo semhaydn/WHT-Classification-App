@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+
+{% block title %}Import Preview | WHT Classification{% endblock %}
+
+{% block content %}
+<div class="detail-hero">
+    <div>
+        <p class="eyebrow">Import Center</p>
+        <h1>{% if upload_session.status == "COMPLETED" %}Import results{% else %}Review import preview{% endif %}</h1>
+        <p class="subtitle">Confirm the files and row outcomes before importing.</p>
+    </div>
+    <a href="{% url 'import-center' %}">Back to Import Center</a>
+</div>
+
+{% if upload_session.preview.notice %}
+    <div class="match-message ambiguous" role="status">{{ upload_session.preview.notice }}</div>
+{% endif %}
+
+{% for file in upload_session.preview.files %}
+<section class="panel" style="margin-top: 20px;">
+    <h2>{{ file.filename }}</h2>
+    <p class="muted">{% if file.kind == "material" %}MaterialData{% else %}Open Line Items{% endif %} · {{ file.rows_read }} rows read</p>
+    {% if upload_session.status == "COMPLETED" %}
+        {% for batch in batches %}
+            {% if file.kind == "material" and batch.import_type == "MATERIAL_DATA" or file.kind == "open_items" and batch.import_type == "OPEN_ITEMS" %}
+                <div class="cards">
+                    <div class="card"><span class="card-label">Created</span><strong class="card-value">{{ batch.rows_created }}</strong></div>
+                    <div class="card"><span class="card-label">Updated</span><strong class="card-value">{{ batch.rows_updated }}</strong></div>
+                    <div class="card"><span class="card-label">Skipped</span><strong class="card-value">{{ batch.rows_skipped }}</strong></div>
+                    <div class="card"><span class="card-label">Rejected</span><strong class="card-value">{{ batch.rows_rejected }}</strong></div>
+                </div>
+            {% endif %}
+        {% endfor %}
+    {% else %}
+        <div class="cards">
+            <div class="card"><span class="card-label">Would create</span><strong class="card-value">{{ file.rows_created }}</strong></div>
+            <div class="card"><span class="card-label">Would update</span><strong class="card-value">{{ file.rows_updated }}</strong></div>
+            <div class="card"><span class="card-label">Would skip</span><strong class="card-value">{{ file.rows_skipped }}</strong></div>
+            <div class="card"><span class="card-label">Rejected</span><strong class="card-value">{{ file.rows_rejected }}</strong></div>
+        </div>
+    {% endif %}
+    {% if file.errors %}
+        <h3>Rows to review</h3>
+        <div class="table-wrap">
+            <table>
+                <thead><tr><th>CSV row</th><th>Issue</th></tr></thead>
+                <tbody>
+                    {% for error in file.errors %}
+                    <tr><td>{{ error.row_number }}</td><td>{{ error.message }}</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <p class="match-message matched" role="status">All rows passed validation.</p>
+    {% endif %}
+    {% if file.warnings %}
+        <h3>Warnings</h3>
+        <div class="table-wrap">
+            <table>
+                <thead><tr><th>CSV row</th><th>Outcome</th></tr></thead>
+                <tbody>
+                    {% for warning in file.warnings %}
+                    <tr><td>{{ warning.row_number }}</td><td>{{ warning.message }}</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% endif %}
+    {% if file.rows %}
+        <h3>Validated row preview</h3>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    {% if file.kind == "material" %}
+                        <tr><th>CSV row</th><th>Purchasing document</th><th>Purchasing item</th><th>Material</th><th>Description</th><th>Outcome</th><th>Reason</th></tr>
+                    {% else %}
+                        <tr><th>CSV row</th><th>Accounting document</th><th>Line</th><th>Supplier</th><th>Purchasing document</th><th>Purchasing item</th><th>G/L account</th><th>Amount</th><th>Currency</th><th>Material match</th><th>Outcome</th><th>Reason</th></tr>
+                    {% endif %}
+                </thead>
+                <tbody>
+                    {% for row in file.rows %}
+                    <tr>
+                        <td>{{ row.row_number }}</td>
+                        {% if file.kind == "material" %}
+                            <td>{{ row.values.purchasing_document|default:"—" }}</td>
+                            <td>{{ row.values.item|default:"—" }}</td>
+                            <td>{{ row.values.material|default:"—" }}</td>
+                            <td>{{ row.values.short_text|default:"—" }}</td>
+                        {% else %}
+                            <td>{{ row.values.accounting_document_number|default:"—" }}</td>
+                            <td>{{ row.values.line_number|default:"—" }}</td>
+                            <td>{{ row.values.vendor_number|default:"—" }}</td>
+                            <td>{{ row.values.purchasing_document|default:"—" }}</td>
+                            <td>{{ row.values.purchasing_document_item|default:"—" }}</td>
+                            <td>{{ row.values.gl_account|default:"—" }}</td>
+                            <td>{{ row.values.document_currency_amount|default:"—" }}</td>
+                            <td>{{ row.values.document_currency|default:"—" }}</td>
+                            <td>{{ row.material_match|default:"—" }}</td>
+                        {% endif %}
+                        <td>{{ row.outcome|default:"—"|title }}</td>
+                        <td>{{ row.reason|default:"—" }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% endif %}
+</section>
+{% endfor %}
+
+{% if upload_session.preview.material_matches %}
+<section class="panel" style="margin-top: 20px;">
+    <h2>Material matching preview</h2>
+    <p>For Open Line Items rows that pass validation and duplicate-key checks, based on existing MaterialData plus any valid MaterialData in this upload:</p>
+    <ul>
+        <li>{{ upload_session.preview.material_matches.matched }} line(s) will have exactly one material match.</li>
+        <li>{{ upload_session.preview.material_matches.not_found }} line(s) will have no material match.</li>
+        <li>{{ upload_session.preview.material_matches.ambiguous }} line(s) have multiple possible matches. The app will not select one automatically.</li>
+    </ul>
+</section>
+{% endif %}
+
+{% if upload_session.status == "COMPLETED" %}
+    <section class="panel" style="margin-top: 20px;">
+        <h2>Imported batches</h2>
+        <ul class="history-list">
+            {% for batch in batches %}
+                <li><a href="{% url 'import-batch-detail' batch.pk %}">{{ batch.get_import_type_display }}: {{ batch.source_filename }}</a> — {{ batch.rows_created }} created, {{ batch.rows_updated }} updated, {{ batch.rows_skipped }} skipped, {{ batch.rows_rejected }} rejected.</li>
+            {% empty %}
+                <li>No batch records are associated with this upload.</li>
+            {% endfor %}
+        </ul>
+    </section>
+{% elif upload_session.status == "READY" %}
+    <section class="panel" style="margin-top: 20px;">
+        <h2>Confirm import</h2>
+        <p>Confirming imports the complete validated batch. Any blocking row error rejects the entire batch without applying valid rows. If both files are selected, MaterialData is processed first. The import is performed as one database transaction.</p>
+        <form method="post">
+            {% csrf_token %}
+            <button type="submit">Confirm and import</button>
+        </form>
+    </section>
+{% elif upload_session.status == "IMPORTING" %}
+    <section class="panel" style="margin-top: 20px;">
+        <h2>Import in progress</h2>
+        <p>This upload is currently being processed. Refresh this page shortly to see the result.</p>
+    </section>
+{% elif upload_session.status == "EXPIRED" %}
+    <section class="panel" style="margin-top: 20px;">
+        <h2>Preview expired</h2>
+        <p>This preview was not imported. Upload the files again to validate and confirm them.</p>
+    </section>
+{% else %}
+    <section class="panel" style="margin-top: 20px;">
+        <h2>Import not available</h2>
+        <p>This complete upload was rejected. No valid rows were applied. Correct the rejected rows and upload the files again.</p>
+    </section>
+{% endif %}
+{% endblock %}
