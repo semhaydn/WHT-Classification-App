@@ -1,5 +1,13 @@
 # WHT Classification and Review Application
 
+> **Current documentation authority:** This specification retains the broader
+> product requirements and proposals. For verified current architecture, rules,
+> data, and roadmap status, use [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md),
+> [docs/BUSINESS_RULES.md](docs/BUSINESS_RULES.md),
+> [docs/DATA_DICTIONARY.md](docs/DATA_DICTIONARY.md), and
+> [docs/DEVELOPMENT_ROADMAP.md](docs/DEVELOPMENT_ROADMAP.md). The business rules
+> document is authoritative for current classification and WHT behavior.
+
 ## 1. Project purpose
 
 Build an internal web application for transaction-level withholding tax classification, calculation, review, approval, and audit tracking.
@@ -24,7 +32,7 @@ The business data discovery was completed before application implementation. The
 
 The current repository contains synthetic CSV fixtures under `data/wht_synthetic_data/`, not the original business workbooks. These fixtures model the source structures and are for development/testing only. The imported CSVs are not approved tax guidance.
 
-The confirmed material business key is Purchasing Document + Purchasing Document Item. Material Number is not a key. Although the source relationship is unique, the current synthetic material CSV contains repeated keys with conflicting prices; the importer rejects all rows for every repeated key and reports them rather than selecting one.
+The confirmed material business key is Purchasing Document + Purchasing Document Item. Material Number is not a key. The current synthetic material CSV contains repeated keys. The importer uses the last occurrence for each repeated key and warns that earlier rows were skipped; the database still enforces uniqueness for stored Purchasing Document + Item values.
 
 The confirmed WHT lookup key is Supplier + Supplier Country + Final Cost Type. The checked-in synthetic WHT CSV has been corrected to remove duplicate keys; uploads with repeated keys are rejected in full.
 
@@ -256,7 +264,7 @@ The system handles:
 - Exactly one matching MaterialData record
 - Multiple possible matching MaterialData records
 
-The database enforces uniqueness, and imports reject every source row belonging to a duplicate key. The current synthetic fixture contains conflicting duplicate rows that must be corrected before those records can be loaded. The application must never silently choose the first record when multiple matches exist.
+The database enforces uniqueness. For duplicate keys within a MaterialData CSV, the current importer keeps the last occurrence and warns about earlier rows. This import policy does not permit silently selecting among multiple matching stored records: zero, one, and multiple match outcomes remain explicit, and the application must never arbitrarily choose a match.
 
 The latest match status is persisted per open item and changes are written to audit history. A no-match exception remains visible on the transaction detail page. Only corrected purchasing data clears it; users do not manually link a material record.
 
@@ -672,7 +680,13 @@ Do not implement yet:
 - Background task queues
 - Automatic booking or payment instructions
 
-## 22. Incremental implementation phases
+## 22. Original incremental implementation phases
+
+The phases below record the original implementation plan, not a current
+backlog. Some listed work is now implemented and some status descriptions may
+be stale. See [docs/DEVELOPMENT_ROADMAP.md](docs/DEVELOPMENT_ROADMAP.md) for
+verified current capabilities and known gaps. This plan does not authorize
+implementation.
 
 ### Data Discovery Phase
 
@@ -815,6 +829,7 @@ Only after sufficient validated human decisions exist:
 
 ## 23. Current instruction
 
-Data discovery is complete; do not restart it. The business owner has confirmed the Phase 3 material key and Phase 5 WHT key, effective-date basis, default treatment, approval role, duplicate handling, Decimal rate convention, and rounding convention.
-
-Implement only the phase explicitly requested. The next work outside completed Phases 3 and 5 is to address the remaining Phase 6 workflow gaps and Phase 8 hardening requirements. Do not implement out-of-scope integrations or ML without a separate request.
+Data discovery is complete. Implement only the phase explicitly requested and
+do not treat this specification or the roadmap as authorization for additional
+work. Follow the authoritative current behavior in
+[docs/BUSINESS_RULES.md](docs/BUSINESS_RULES.md).

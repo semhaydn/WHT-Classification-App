@@ -4,6 +4,20 @@ This project is an incremental Django application for transaction-level withhold
 
 The development dataset is synthetic and is stored under `data/wht_synthetic_data/`.
 
+## Project documentation
+
+The current implementation and its rules are documented here:
+
+- [Architecture](docs/ARCHITECTURE.md) — verified application structure and data flow
+- [Business rules](docs/BUSINESS_RULES.md) — authoritative classification and WHT behavior
+- [Data dictionary](docs/DATA_DICTIONARY.md) — synthetic CSV schemas, grains, and application records
+- [ML strategy](docs/ML_STRATEGY.md) — future supervised Cost Type recommendations only
+- [Development roadmap](docs/DEVELOPMENT_ROADMAP.md) — current capabilities and separately scoped future work
+
+The roadmap and ML strategy do not authorize implementation of future
+functionality. Use the business rules document as the source of truth for
+classification and WHT behavior.
+
 ## Current implementation
 
 The data-discovery work is complete. The prototype currently implements reference data and CSV import, invoice-level Active and Completed lists with filters and Excel export, line-level review screens, material matching, human Cost Type decisions, WHT determination, review actions, persisted completed-review calculation snapshots, dashboard summaries, and administrator reopening.
