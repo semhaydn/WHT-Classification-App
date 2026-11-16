@@ -1,0 +1,100 @@
+{
+  "actual_percentages": {
+    "material_reference_eligible_lines": {
+      "EXACT_MATCH": "95.000",
+      "NO_PURCHASING_REFERENCE": "3.125",
+      "UNMATCHED_PURCHASING_REFERENCE": "1.875"
+    },
+    "posting_outcome_invoices": {
+      "CORRECT": "80.000",
+      "INCORRECT_AMOUNT": "3.000",
+      "MISSING_POSTING": "2.000",
+      "NO_POSTING_UNRESOLVED": "5.000",
+      "NO_POSTING_ZERO_RATE": "10.000"
+    },
+    "wht_treatment_invoices": {
+      "MISSING_MAPPING": "5.000",
+      "POSITIVE_RATE": "85.000",
+      "ZERO_RATE": "10.000"
+    }
+  },
+  "approved_mapping_counts": {
+    "positive_rate": 46,
+    "supplier_cost_type_keys_with_multiple_versions": 0,
+    "unique_mappings_used": 42,
+    "zero_rate": 1
+  },
+  "excluded_control_gl_accounts": [
+    "210000",
+    "229220"
+  ],
+  "expense_gl_accounts": [
+    "210020",
+    "570010"
+  ],
+  "generation_timestamp_utc": "2026-11-16T23:31:27.034347+00:00",
+  "invoice_complexity_counts": {
+    "1": 60,
+    "2": 30,
+    "4": 10
+  },
+  "invoice_count": 100,
+  "manifest_key": [
+    "Entity",
+    "Document Number",
+    "Line Number"
+  ],
+  "material_reference_line_counts": {
+    "EXACT_MATCH": 152,
+    "NO_PURCHASING_REFERENCE": 5,
+    "UNMATCHED_PURCHASING_REFERENCE": 3
+  },
+  "posting_date_independence_scenarios": 4,
+  "posting_outcome_invoice_counts": {
+    "CORRECT": 80,
+    "INCORRECT_AMOUNT": 3,
+    "MISSING_POSTING": 2,
+    "NO_POSTING_UNRESOLVED": 5,
+    "NO_POSTING_ZERO_RATE": 10
+  },
+  "random_seed": 20261116,
+  "reference_counts": {
+    "CostType": 13,
+    "CostType_active": 13,
+    "GLEligibility": 2,
+    "ImportBatch": 0,
+    "MaterialData": 0,
+    "MaterialMatch": 0,
+    "OpenItem": 0,
+    "SupplierCountry": 2323,
+    "WHTMapping": 47,
+    "WHTMapping_approved": 47,
+    "WHTMapping_draft": 0
+  },
+  "row_counts": {
+    "eligible_expense_lines": 160,
+    "material_data_uat.csv": 152,
+    "open_line_items_uat.csv": 353,
+    "uat_scenarios.csv": 353,
+    "zero_amount_ineligible_lines": 10
+  },
+  "synthetic_currency_assumptions": {
+    "company_currency_by_entity": {
+      "SYN01": "GBP",
+      "SYN02": "EUR",
+      "SYN03": "USD"
+    },
+    "description": "Illustrative fixed factors used only to populate accounting currency columns; WHT uses document-currency amounts only.",
+    "group_currency": "USD",
+    "usd_per_currency_unit": {
+      "EUR": "1.08",
+      "GBP": "1.27",
+      "USD": "1.00"
+    }
+  },
+  "wht_treatment_invoice_counts": {
+    "MISSING_MAPPING": 5,
+    "POSITIVE_RATE": 85,
+    "ZERO_RATE": 10
+  }
+}

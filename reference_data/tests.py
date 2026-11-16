@@ -11,9 +11,13 @@ from reference_data.models import CostType, SupplierCountry
 def test_imports_reference_csv_files() -> None:
     call_command("import_reference_data")
 
-    assert SupplierCountry.objects.count() == 2322
+    assert SupplierCountry.objects.count() == 2323
     assert CostType.objects.count() == 13
     assert SupplierCountry.objects.get(supplier_id="VEN100185").country_code == "GB"
+    assert (
+        SupplierCountry.objects.get(supplier_id="VEN101028").supplier_name
+        == "Synthetic Supplier 0029"
+    )
     assert CostType.objects.filter(code="RENTAL", active=True).exists()
     assert CostType.objects.filter(code="INTEREST", active=True).exists()
     assert CostType.objects.filter(code="ROYALTY", active=True).exists()
@@ -24,7 +28,7 @@ def test_reimport_is_idempotent() -> None:
     call_command("import_reference_data")
     call_command("import_reference_data")
 
-    assert SupplierCountry.objects.count() == 2322
+    assert SupplierCountry.objects.count() == 2323
     assert CostType.objects.count() == 13
 
 

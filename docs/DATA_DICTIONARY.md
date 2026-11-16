@@ -12,7 +12,7 @@ database records after validation or deduplication.
 
 | File | Grain | Raw rows | Key fields / notes |
 |---|---|---:|---|
-| `countries_synthetic.csv` | Supplier-country reference row | 2,324 | Supplier identifier; two rows are missing required values and are rejected by the importer, yielding 2,322 imported rows |
+| `countries_synthetic.csv` | Supplier-country reference row | 2,325 | Supplier identifier; two rows are missing required values and are rejected by the importer, yielding 2,323 imported rows |
 | `cost_types_synthetic.csv` | Cost Type catalog entry | 13 | Cost Type |
 | `material_data_synthetic.csv` | Purchasing document item | 234 | Purchasing Document + Item; 10 duplicate key groups (20 rows) collapse to 224 distinct keys with last-occurrence-wins import |
 | `open_line_items_synthetic.csv` | Accounting document line | 42 | Entity + Document Number + Line Number |
@@ -22,8 +22,8 @@ database records after validation or deduplication.
 `metadata.json` records generator/source counts and output counts. Its
 `source_rows.wht_mapping` value is 51, while the checked-in WHT CSV contains 47
 rows after fixture correction; `output_rows.wht_mapping` now reflects the
-checked-in file. The supplier-country fixture contains 2,324 raw CSV rows,
-while importer tests confirm 2,322 valid imported records.
+checked-in file. The supplier-country fixture contains 2,325 raw CSV rows,
+while importer tests confirm 2,323 valid imported records.
 
 ### File columns
 
