@@ -4,6 +4,8 @@ from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.contrib import messages
+from django.core import signing
+from django.core.signing import BadSignature
 from django.core.paginator import Paginator
 from django.core.exceptions import ValidationError
 from django.db import DatabaseError
@@ -12,6 +14,7 @@ from django.conf import settings
 from datetime import date
 from urllib.parse import urlencode
 
+from reference_data.models import CostType
 from .forms import (
     ClassificationDecisionForm,
     LineExclusionForm,
@@ -35,6 +38,8 @@ from .services.import_center import (
     preview_and_stage,
 )
 from .services.classification import complete_classification, save_final_classification
+from .services.cost_type_ai.provider import RecommendationUnavailable
+from .services.cost_type_ai.recommendation import recommend_cost_types
 from .services.material_matching import get_stored_material_match
 from .services.review import finalize_invoice
 from .services.wht_determination import determine_wht
@@ -63,6 +68,36 @@ from .services.reopening import reopen_invoice, reopen_line
 from .services.gl_eligibility import is_open_item_classifiable
 
 logger = logging.getLogger(__name__)
+_COST_TYPE_RECOMMENDATION_SALT = "transactions.cost_type_ai.recommendation"
+_COST_TYPE_RECOMMENDATION_MAX_AGE = 15 * 60
+
+
+def _signed_recommendation_cost_type(
+    token: str,
+    open_item: OpenItem,
+) -> CostType | None:
+    if not token:
+        return None
+    try:
+        payload = signing.loads(
+            token,
+            salt=_COST_TYPE_RECOMMENDATION_SALT,
+            max_age=_COST_TYPE_RECOMMENDATION_MAX_AGE,
+        )
+    except BadSignature:
+        logger.warning("Discarded invalid signed Cost Type recommendation.")
+        return None
+    if (
+        not isinstance(payload, dict)
+        or payload.get("open_item_id") != open_item.pk
+        or not isinstance(payload.get("cost_type_code"), str)
+    ):
+        logger.warning("Discarded mismatched signed Cost Type recommendation.")
+        return None
+    return CostType.objects.filter(
+        code=payload["cost_type_code"],
+        active=True,
+    ).first()
 
 
 class DashboardRows(list):
@@ -469,23 +504,78 @@ def open_item_detail(request: HttpRequest, pk: int) -> HttpResponse:
     if request.method == "POST":
         form = ClassificationDecisionForm(request.POST)
         if form.is_valid():
+            suggested_cost_type = _signed_recommendation_cost_type(
+                form.cleaned_data["recommendation_signature"],
+                open_item,
+            )
             save_final_classification(
                 open_item=open_item,
                 final_cost_type=form.cleaned_data["final_cost_type"],
                 classification_reason=form.cleaned_data["classification_reason"],
                 user=request.user,
+                suggested_cost_type=suggested_cost_type,
             )
             return redirect("open-item-detail", pk=open_item.pk)
     else:
+        ai_recommendation = None
+        ai_recommendation_unavailable = False
+        can_recommend = (
+            settings.LLM_COST_TYPE_RECOMMENDATIONS_ENABLED
+            and current_decision is None
+            and open_item.status
+            in (
+                OpenItem.Status.NEW,
+                OpenItem.Status.IN_CLASSIFICATION,
+                OpenItem.Status.RETURNED,
+            )
+            and open_item.is_classifiable
+            and has_role(request.user, "Transaction User", "Administrator")
+        )
+        if can_recommend:
+            try:
+                ai_recommendation = recommend_cost_types(
+                    open_item,
+                    matched_material,
+                )
+            except RecommendationUnavailable as error:
+                logger.warning(
+                    "AI Cost Type recommendation unavailable (%s).",
+                    type(error).__name__,
+                )
+                ai_recommendation_unavailable = True
+        recommended_cost_type = (
+            ai_recommendation.recommendations[0].cost_type
+            if ai_recommendation and ai_recommendation.recommendations
+            else None
+        )
+        recommendation_signature = (
+            signing.dumps(
+                {
+                    "open_item_id": open_item.pk,
+                    "cost_type_code": recommended_cost_type.code,
+                },
+                salt=_COST_TYPE_RECOMMENDATION_SALT,
+            )
+            if recommended_cost_type is not None
+            else ""
+        )
         form = ClassificationDecisionForm(
             initial={
                 "final_cost_type": (
                     current_decision.final_cost_type_id
                     if current_decision is not None
-                    else None
-                )
+                    else (
+                        recommended_cost_type.pk
+                        if recommended_cost_type is not None
+                        else None
+                    )
+                ),
+                "recommendation_signature": recommendation_signature,
             }
         )
+    if request.method == "POST":
+        ai_recommendation = None
+        ai_recommendation_unavailable = False
     return render(
         request,
         "transactions/open_item_detail.html",
@@ -495,6 +585,8 @@ def open_item_detail(request: HttpRequest, pk: int) -> HttpResponse:
             "matched_material": matched_material,
             "cost_description": cost_description,
             "classification_form": form,
+            "ai_recommendation": ai_recommendation,
+            "ai_recommendation_unavailable": ai_recommendation_unavailable,
             "current_decision": current_decision,
             "decision_history": open_item.classification_decisions.select_related(
                 "final_cost_type"
