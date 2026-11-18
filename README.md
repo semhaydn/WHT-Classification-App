@@ -36,6 +36,61 @@ WHT calculations use the signed document-currency amount multiplied by the persi
 
 The synthetic CSV files are development fixtures, not approved tax guidance. The MaterialData fixture contains duplicate keys and exercises last-occurrence-wins behavior. Duplicate keys in a WHT Mapping upload block the complete import. The checked-in mapping fixture has been corrected and contains no duplicate keys. The Cost Type catalog is maintained separately in `cost_types_synthetic.csv`; historical cost-type examples do not define which Cost Types are valid. The WHT Mapping CSV has no authoritative No WHT treatment field, so imports do not infer that treatment from a zero or positive rate.
 
+## Optional AI Cost Type recommendations
+
+The invoice-line page can show up to three ranked Cost Type recommendations
+from the OpenAI Responses API. This is a classification aid only: users must
+confirm or change the editable Cost Type selection, and only that submitted
+human selection becomes `final_cost_type`. The recommendation cannot determine
+WHT treatment, rates, or approvals. Existing human decisions are never replaced.
+Opening the page does not create a classification or audit record; the top
+recommendation is stored as the existing suggested Cost Type only when the
+human submits the form.
+
+The feature is off by default. To enable it, install the declared requirements
+and configure these environment variables for the Django process:
+
+- `OPENAI_API_KEY`: API key; keep it in a Codespaces secret or other secret
+  store, never in source control or a committed `.env` file.
+- `OPENAI_COST_TYPE_MODEL`: a model identifier enabled for the API account.
+- `LLM_COST_TYPE_RECOMMENDATIONS_ENABLED=True`: explicit opt-in. The default is
+  `False`.
+
+The API request contains only the G/L account and description, accounting-line
+text and assignment, material description, matched MaterialData short text and
+material group, relevant purchasing-document type, and active Cost Type codes,
+names, and descriptions. Supplier identifiers/names/countries, document
+identifiers, amounts, currencies, tax information, usernames, approval
+information, and workflow state are not included. Do not enable this feature on
+real company transactions without separate authorization; use synthetic UAT
+data only.
+Descriptions are treated as untrusted input and cannot override the system
+classification instructions. Requests use `store=False`, an 8-second timeout,
+and one bounded SDK retry.
+
+Authentication failures, rate limits, timeouts, service outages, refusals,
+incomplete responses, and invalid recommendations leave manual classification
+available. Only active database Cost Types are accepted; duplicates and
+unknown/inactive codes are discarded. Recommendations are not calibrated
+probabilities and do not display confidence percentages. To disable the
+feature immediately, set `LLM_COST_TYPE_RECOMMENDATIONS_ENABLED=False` and
+restart the Django process. No schema changes or migrations are required.
+
+In a Codespaces terminal, configure `OPENAI_API_KEY` as a Codespaces secret
+before starting the app, then set the model and flag and launch the preview:
+
+```bash
+python -m pip install -r requirements.txt
+export OPENAI_COST_TYPE_MODEL="<model-id-enabled-for-your-account>"
+export LLM_COST_TYPE_RECOMMENDATIONS_ENABLED=True
+python manage.py check
+bash scripts/start_codespaces_preview.sh
+```
+
+To turn recommendations off, run `export LLM_COST_TYPE_RECOMMENDATIONS_ENABLED=False`
+and restart the preview process. The model variable is intentionally not
+defaulted to a model that may be unavailable to a particular API account.
+
 ## Application access
 
 Invoice lists, details, exports, dashboards, and workflow actions require an

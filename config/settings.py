@@ -101,6 +101,12 @@ WHT_IMPORT_MAX_FILE_SIZE = int(
 WHT_IMPORT_STAGING_TTL_HOURS = int(
     os.environ.get("WHT_IMPORT_STAGING_TTL_HOURS", "24")
 )
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
+OPENAI_COST_TYPE_MODEL = os.environ.get("OPENAI_COST_TYPE_MODEL", "")
+LLM_COST_TYPE_RECOMMENDATIONS_ENABLED = (
+    os.environ.get("LLM_COST_TYPE_RECOMMENDATIONS_ENABLED", "False").lower()
+    == "true"
+)
 if WHT_IMPORT_MAX_FILE_SIZE <= 0 or WHT_IMPORT_STAGING_TTL_HOURS <= 0:
     raise ImproperlyConfigured(
         "WHT import file-size and staging-retention settings must be positive."

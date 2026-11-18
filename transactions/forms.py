@@ -8,6 +8,10 @@ class ClassificationDecisionForm(forms.Form):
         queryset=CostType.objects.none(),
         empty_label="Select a Cost Type",
     )
+    recommendation_signature = forms.CharField(
+        required=False,
+        widget=forms.HiddenInput,
+    )
     classification_reason = forms.CharField(
         widget=forms.Textarea,
         min_length=1,

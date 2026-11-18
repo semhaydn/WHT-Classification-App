@@ -12,6 +12,7 @@ def save_final_classification(
     classification_reason: str,
     user: User | None = None,
     allow_review_override: bool = False,
+    suggested_cost_type: CostType | None = None,
 ) -> ClassificationDecision:
     if not open_item.is_classifiable:
         raise ValueError("Only non-zero postings on eligible G/L accounts can be classified.")
@@ -35,6 +36,7 @@ def save_final_classification(
 
     decision = ClassificationDecision.objects.create(
         open_item=open_item,
+        suggested_cost_type=suggested_cost_type,
         final_cost_type=final_cost_type,
         classification_method=(
             ClassificationDecision.Method.HUMAN_OVERRIDE

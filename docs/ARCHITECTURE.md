@@ -67,6 +67,11 @@ The WHT and classification rules are specified in
   exceptions, reference data administration, and reopening are Administrator
   functions. Django admin keeps workflow, determination, and audit records
   read-only.
+- Optional AI Cost Type recommendations use a separate OpenAI Responses API
+  service. The feature is disabled by default, does not create decisions or
+  audit events when a line is opened, and can only populate the existing
+  suggested Cost Type field when a human submits the classification form.
+  Final Cost Type and WHT behavior remain human-controlled.
 - Active Invoices are derived from source lines and exclude documents with a
   current completed snapshot. Completed Invoices read the current snapshot.
   Lists and Excel exports do not recalculate WHT.
@@ -98,7 +103,9 @@ Production secrets and private Import Center staging are guarded by settings,
 but this is not evidence that the application is production-ready. Do not
 change or deploy infrastructure without a separately approved task.
 
-The architecture includes fields that can hold recommendations and historical
-suggestions, but it contains no trained model, inference service, or automated
-Cost Type classifier. See [the ML strategy](ML_STRATEGY.md); it is future
-direction, not current functionality.
+The application has no automated Cost Type classifier. Its optional AI
+recommendation service sends only configured accounting and purchasing
+descriptions plus the active Cost Type catalogue to the configured OpenAI
+model. It does not import or depend on the conventional scikit-learn
+implementation. See [the ML strategy](ML_STRATEGY.md) for the separate
+supervised-learning direction.

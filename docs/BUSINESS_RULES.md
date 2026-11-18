@@ -15,8 +15,10 @@ not tax advice. Do not infer additional tax rules from synthetic examples.
   audit event.
 - The human Final Cost Type is an explicit decision. Each line has one current
   decision; changes retain decision history and produce audit events.
-- Historical Cost Type imports and any future system/ML recommendation are not
-  final decisions. A human must select or confirm the Final Cost Type.
+- Historical Cost Type imports and system recommendations, including the
+  optional AI recommendation, are not final decisions. A human must select or
+  confirm the Final Cost Type. An AI suggestion never replaces an existing
+  human decision.
 - A MaterialData match can supply purchasing text used as Cost Description; it
   does not itself assign a Final Cost Type.
 
