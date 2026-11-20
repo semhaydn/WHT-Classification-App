@@ -7,7 +7,6 @@ from django.core.management import call_command
 from django.core.management.base import CommandError
 
 from reference_data.models import CostType, SupplierCountry, WHTMapping
-from reference_data.services import approve_wht_rule
 
 
 EFFECTIVE_FROM = "2024-03-01"
@@ -43,11 +42,6 @@ def create_approval_fixture(*, conflicting_drafts: bool = False):
             source_title=f"Rule {index}",
             version=1,
         )
-        if index in {0, 1, 26}:
-            rule.effective_from = date(2024, 3, 1)
-            rule.effective_to = date(2027, 12, 1)
-            rule.save(update_fields=["effective_from", "effective_to"])
-            approve_wht_rule(rule.pk, administrator)
         mappings.append(rule)
 
     if conflicting_drafts:
@@ -64,7 +58,7 @@ def run_command(administrator, **options):
         "user_id": administrator.pk,
         "effective_from": EFFECTIVE_FROM,
         "effective_to": EFFECTIVE_TO,
-        "expected_count": 44,
+        "expected_count": 47,
     }
     defaults.update(options)
     call_command("approve_draft_wht_mappings", **defaults)
@@ -72,82 +66,37 @@ def run_command(administrator, **options):
 
 @pytest.mark.django_db
 def test_dry_run_does_not_mutate_mappings(capsys) -> None:
-    administrator, _, mappings = create_approval_fixture()
-    original_approved = list(
-        WHTMapping.objects.filter(status=WHTMapping.Status.APPROVED)
-        .order_by("pk")
-        .values(
-            "id",
-            "supplier",
-            "country_code",
-            "cost_category_id",
-            "wht_rate",
-            "source_title",
-            "version",
-            "effective_from",
-            "effective_to",
-            "status",
-            "approved_by_id",
-            "approved_at",
-        )
-    )
+    administrator, _, _ = create_approval_fixture()
+    original = list(WHTMapping.objects.order_by("pk").values())
 
     run_command(administrator)
 
     output = capsys.readouterr().out
-    assert "Mapping counts: total=47 approved=3 draft=44" in output
-    assert "Preflight passed: exactly 44 mappings would be approved." in output
-    assert WHTMapping.objects.filter(status=WHTMapping.Status.DRAFT).count() == 44
-    assert list(
-        WHTMapping.objects.filter(status=WHTMapping.Status.APPROVED)
-        .order_by("pk")
-        .values(
-            "id",
-            "supplier",
-            "country_code",
-            "cost_category_id",
-            "wht_rate",
-            "source_title",
-            "version",
-            "effective_from",
-            "effective_to",
-            "status",
-            "approved_by_id",
-            "approved_at",
-        )
-    ) == original_approved
-    assert all(
-        rule.effective_from is None and rule.effective_to is None
-        for index, rule in enumerate(mappings)
-        if index not in {0, 1, 26}
-    )
+    assert "Mapping counts: total=47 approved=0 draft=47" in output
+    assert "Preflight passed: exactly 47 mappings would be approved." in output
+    assert WHTMapping.objects.filter(status=WHTMapping.Status.DRAFT).count() == 47
+    assert list(WHTMapping.objects.order_by("pk").values()) == original
 
 
 @pytest.mark.django_db
-def test_confirm_approves_drafts_and_preserves_existing_approvals() -> None:
-    administrator, _, _ = create_approval_fixture()
-    existing_approved = list(
-        WHTMapping.objects.filter(status=WHTMapping.Status.APPROVED)
-        .order_by("pk")
-        .values(
-            "id",
-            "supplier",
-            "supplier_name",
-            "cost_category_id",
-            "wht_rate",
-            "country_code",
-            "source_title",
-            "version",
-            "effective_from",
-            "effective_to",
-            "status",
-            "approved_by_id",
-            "approved_at",
-        )
+def test_confirm_approves_all_drafts(monkeypatch) -> None:
+    administrator, _, mappings = create_approval_fixture()
+    from reference_data.management.commands import approve_draft_wht_mappings
+
+    original_approve = approve_draft_wht_mappings.approve_wht_rule
+    approved_ids = []
+
+    def record_approval(rule_id, user):
+        approved_ids.append(rule_id)
+        return original_approve(rule_id, user)
+
+    monkeypatch.setattr(
+        approve_draft_wht_mappings, "approve_wht_rule", record_approval
     )
 
     run_command(administrator, confirm=True)
 
+    assert approved_ids == [rule.pk for rule in mappings]
     assert WHTMapping.objects.count() == 47
     assert WHTMapping.objects.filter(status=WHTMapping.Status.APPROVED).count() == 47
     assert WHTMapping.objects.filter(status=WHTMapping.Status.DRAFT).count() == 0
@@ -155,25 +104,27 @@ def test_confirm_approves_drafts_and_preserves_existing_approvals() -> None:
         effective_from=date(2024, 3, 1),
         effective_to=date(2027, 12, 1),
     ).exists()
-    assert list(
-        WHTMapping.objects.filter(pk__in=[1, 2, 27])
-        .order_by("pk")
-        .values(
-            "id",
-            "supplier",
-            "supplier_name",
-            "cost_category_id",
-            "wht_rate",
-            "country_code",
-            "source_title",
-            "version",
-            "effective_from",
-            "effective_to",
-            "status",
-            "approved_by_id",
-            "approved_at",
-        )
-    ) == existing_approved
+    assert not WHTMapping.objects.exclude(approved_by=administrator).exists()
+    assert not WHTMapping.objects.filter(approved_at__isnull=True).exists()
+
+
+@pytest.mark.django_db
+def test_fresh_synthetic_import_can_be_approved(tmp_path) -> None:
+    administrator = get_user_model().objects.create_superuser(
+        username="import-admin", password="synthetic-password"
+    )
+    call_command("import_reference_data")
+    call_command("import_wht_mapping")
+
+    assert WHTMapping.objects.count() == 47
+    assert WHTMapping.objects.filter(status=WHTMapping.Status.DRAFT).count() == 47
+
+    run_command(administrator, confirm=True)
+
+    assert WHTMapping.objects.filter(status=WHTMapping.Status.APPROVED).count() == 47
+    assert not WHTMapping.objects.filter(status=WHTMapping.Status.DRAFT).exists()
+    call_command("generate_uat_dataset", output_dir=str(tmp_path))
+    assert (tmp_path / "uat_scenarios.csv").exists()
 
 
 @pytest.mark.django_db
@@ -183,17 +134,17 @@ def test_approval_requires_administrator() -> None:
     with pytest.raises(CommandError, match="not an authorized Administrator"):
         run_command(administrator, user_id=reviewer.pk, confirm=True)
 
-    assert WHTMapping.objects.filter(status=WHTMapping.Status.DRAFT).count() == 44
+    assert WHTMapping.objects.filter(status=WHTMapping.Status.DRAFT).count() == 47
 
 
 @pytest.mark.django_db
 def test_expected_count_mismatch_aborts() -> None:
     administrator, _, _ = create_approval_fixture()
 
-    with pytest.raises(CommandError, match="must be 44"):
+    with pytest.raises(CommandError, match="must be 47"):
         run_command(administrator, expected_count=43)
 
-    assert WHTMapping.objects.filter(status=WHTMapping.Status.DRAFT).count() == 44
+    assert WHTMapping.objects.filter(status=WHTMapping.Status.DRAFT).count() == 47
 
 
 @pytest.mark.django_db
@@ -218,7 +169,7 @@ def test_invalid_dates_abort(
             effective_to=effective_to,
         )
 
-    assert WHTMapping.objects.filter(status=WHTMapping.Status.DRAFT).count() == 44
+    assert WHTMapping.objects.filter(status=WHTMapping.Status.DRAFT).count() == 47
 
 
 @pytest.mark.django_db
@@ -228,24 +179,40 @@ def test_supplier_country_mismatch_blocks_entire_batch(capsys) -> None:
     mappings[3].save(update_fields=["supplier"])
 
     with pytest.raises(CommandError, match="Preflight failed"):
-        run_command(administrator)
+        run_command(administrator, confirm=True)
 
     assert "does not exist in SupplierCountry" in capsys.readouterr().err
-    assert WHTMapping.objects.filter(status=WHTMapping.Status.DRAFT).count() == 44
+    assert WHTMapping.objects.filter(status=WHTMapping.Status.DRAFT).count() == 47
 
 
 @pytest.mark.django_db
-def test_overlap_with_existing_approved_mapping_blocks_batch(capsys) -> None:
+@pytest.mark.parametrize("change", ["missing", "extra", "approved"])
+def test_unexpected_mapping_counts_abort(change: str) -> None:
     administrator, _, mappings = create_approval_fixture()
-    mappings[3].supplier = mappings[0].supplier
-    mappings[3].version = 2
-    mappings[3].save(update_fields=["supplier", "version"])
+    if change == "missing":
+        mappings[0].delete()
+    elif change == "extra":
+        WHTMapping.objects.create(
+            supplier=mappings[0].supplier,
+            supplier_name=mappings[0].supplier_name,
+            cost_category=mappings[0].cost_category,
+            wht_rate=mappings[0].wht_rate,
+            country_code=mappings[0].country_code,
+            source_title="Extra mapping",
+            version=2,
+        )
+    else:
+        from reference_data.services import approve_wht_rule
 
-    with pytest.raises(CommandError, match="Preflight failed"):
-        run_command(administrator)
+        mappings[0].effective_from = date(2024, 3, 1)
+        mappings[0].save(update_fields=["effective_from"])
+        approve_wht_rule(mappings[0].pk, administrator)
 
-    assert "overlaps an approved rule" in capsys.readouterr().err
-    assert WHTMapping.objects.filter(status=WHTMapping.Status.DRAFT).count() == 44
+    original = list(WHTMapping.objects.order_by("pk").values())
+    with pytest.raises(CommandError, match="Mapping count check failed"):
+        run_command(administrator, confirm=True)
+
+    assert list(WHTMapping.objects.order_by("pk").values()) == original
 
 
 @pytest.mark.django_db
@@ -253,10 +220,36 @@ def test_conflicting_draft_candidates_block_batch(capsys) -> None:
     administrator, _, _ = create_approval_fixture(conflicting_drafts=True)
 
     with pytest.raises(CommandError, match="Preflight failed"):
-        run_command(administrator)
+        run_command(administrator, confirm=True)
 
     assert "conflicts with draft mapping ID" in capsys.readouterr().err
-    assert WHTMapping.objects.filter(status=WHTMapping.Status.DRAFT).count() == 44
+    assert WHTMapping.objects.filter(status=WHTMapping.Status.DRAFT).count() == 47
+
+
+@pytest.mark.django_db
+def test_country_disagreement_blocks_batch(capsys) -> None:
+    administrator, _, mappings = create_approval_fixture()
+    mappings[0].country_code = "US"
+    mappings[0].save(update_fields=["country_code"])
+
+    with pytest.raises(CommandError, match="Preflight failed"):
+        run_command(administrator, confirm=True)
+
+    assert "does not match SupplierCountry country" in capsys.readouterr().err
+    assert WHTMapping.objects.filter(status=WHTMapping.Status.DRAFT).count() == 47
+
+
+@pytest.mark.django_db
+def test_inactive_cost_type_produces_warning(capsys) -> None:
+    administrator, _, mappings = create_approval_fixture()
+    cost_type = mappings[0].cost_category
+    cost_type.active = False
+    cost_type.save(update_fields=["active"])
+
+    run_command(administrator)
+
+    assert "WARNING: Cost Type BULK is inactive." in capsys.readouterr().err
+    assert WHTMapping.objects.filter(status=WHTMapping.Status.DRAFT).count() == 47
 
 
 @pytest.mark.django_db
@@ -283,9 +276,48 @@ def test_approval_failure_rolls_back_entire_batch(monkeypatch) -> None:
     with pytest.raises(CommandError, match="rolled back"):
         run_command(administrator, confirm=True)
 
-    assert WHTMapping.objects.filter(status=WHTMapping.Status.APPROVED).count() == 3
-    assert WHTMapping.objects.filter(status=WHTMapping.Status.DRAFT).count() == 44
-    assert not WHTMapping.objects.filter(
-        status=WHTMapping.Status.DRAFT,
-        effective_from__isnull=False,
-    ).exists()
+    assert calls == 2
+    assert not WHTMapping.objects.filter(status=WHTMapping.Status.APPROVED).exists()
+    assert WHTMapping.objects.filter(status=WHTMapping.Status.DRAFT).count() == 47
+    assert not WHTMapping.objects.filter(effective_from__isnull=False).exists()
+    assert not WHTMapping.objects.filter(effective_to__isnull=False).exists()
+    assert not WHTMapping.objects.filter(approved_by__isnull=False).exists()
+    assert not WHTMapping.objects.filter(approved_at__isnull=False).exists()
+
+
+@pytest.mark.django_db
+def test_unexpected_final_counts_roll_back_batch(monkeypatch) -> None:
+    administrator, _, mappings = create_approval_fixture()
+    from reference_data.management.commands import approve_draft_wht_mappings
+
+    original_approve = approve_draft_wht_mappings.approve_wht_rule
+    calls = 0
+
+    def add_unexpected_mapping(rule_id, user):
+        nonlocal calls
+        result = original_approve(rule_id, user)
+        calls += 1
+        if calls == 47:
+            WHTMapping.objects.create(
+                supplier=mappings[0].supplier,
+                supplier_name=mappings[0].supplier_name,
+                cost_category=mappings[0].cost_category,
+                wht_rate=mappings[0].wht_rate,
+                country_code=mappings[0].country_code,
+                source_title="Unexpected mapping",
+                version=2,
+            )
+        return result
+
+    monkeypatch.setattr(
+        approve_draft_wht_mappings, "approve_wht_rule", add_unexpected_mapping
+    )
+
+    with pytest.raises(CommandError, match="Final mapping counts"):
+        run_command(administrator, confirm=True)
+
+    assert calls == 47
+    assert WHTMapping.objects.count() == 47
+    assert WHTMapping.objects.filter(status=WHTMapping.Status.DRAFT).count() == 47
+    assert not WHTMapping.objects.filter(effective_from__isnull=False).exists()
+    assert not WHTMapping.objects.filter(approved_at__isnull=False).exists()

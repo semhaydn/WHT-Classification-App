@@ -1,5 +1,5 @@
-import csv
 import os
+from datetime import date
 from pathlib import Path
 
 from django.conf import settings
@@ -9,7 +9,11 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
 from reference_data.models import CostType, SupplierCountry, WHTMapping
-from transactions.models import ImportBatch
+from transactions.models import ImportBatch, MaterialData, OpenItem
+from transactions.services.gl_eligibility import is_gl_account_eligible
+
+
+MARKER_CONTENT = "uat-reference-v1\n"
 
 
 class Command(BaseCommand):
@@ -28,8 +32,21 @@ class Command(BaseCommand):
 
         database_path = Path(settings.DATABASES["default"]["NAME"])
         marker = database_path.with_suffix(".initialized")
-        if marker.exists() and not database_path.exists():
-            raise CommandError("Demo initialization marker exists but database is missing.")
+        if marker.exists():
+            if not database_path.exists():
+                raise CommandError(
+                    "Demo initialization marker exists but database is missing."
+                )
+            if marker.read_text(encoding="utf-8") != MARKER_CONTENT:
+                raise CommandError(
+                    "Demo initialization marker is incompatible with UAT setup; "
+                    "existing data was not changed."
+                )
+        elif database_path.exists():
+            raise CommandError(
+                "Unmarked demo database already exists; initialization refused. "
+                "Existing data was not changed."
+            )
 
         fixtures = settings.BASE_DIR / "data" / "wht_synthetic_data"
         paths = {
@@ -38,54 +55,65 @@ class Command(BaseCommand):
                 "countries_synthetic.csv",
                 "cost_types_synthetic.csv",
                 "wht_mapping_synthetic.csv",
-                "material_data_synthetic.csv",
-                "cost_type_decisions_synthetic.csv",
-                "open_line_items_synthetic.csv",
             )
         }
         missing = [str(path) for path in paths.values() if not path.is_file()]
         if missing:
             raise CommandError(f"Missing synthetic fixtures: {', '.join(missing)}")
 
+        if marker.exists():
+            call_command("migrate", interactive=False)
+            user = get_user_model().objects.filter(username=username).first()
+            if not user or not user.is_superuser:
+                raise CommandError("Demo database does not contain the configured superuser.")
+            self.stdout.write("Demo database already initialized.")
+            return
+
         call_command("migrate", interactive=False)
         with transaction.atomic():
-            user_model = get_user_model()
-            if marker.exists():
-                user = user_model.objects.filter(username=username).first()
-                if user and user.is_superuser:
-                    self.stdout.write("Demo database already initialized.")
-                    return
-                if user_model.objects.exists():
-                    raise CommandError("Demo database does not contain the configured superuser.")
-            elif user_model.objects.exists():
-                raise CommandError("Uninitialized demo database already contains users.")
+            user = get_user_model().objects.create_superuser(
+                username=username, password=password
+            )
             call_command(
                 "import_reference_data",
                 countries=str(paths["countries_synthetic.csv"]),
                 cost_decisions=str(paths["cost_types_synthetic.csv"]),
             )
             call_command("import_wht_mapping", str(paths["wht_mapping_synthetic.csv"]))
-            call_command("import_material_data", str(paths["material_data_synthetic.csv"]))
             call_command(
-                "import_cost_type_decisions",
-                str(paths["cost_type_decisions_synthetic.csv"]),
+                "approve_draft_wht_mappings",
+                user_id=user.pk,
+                effective_from="2024-03-01",
+                effective_to="2027-12-01",
+                expected_count=47,
+                confirm=True,
             )
-            call_command("import_open_items", str(paths["open_line_items_synthetic.csv"]))
-            with paths["wht_mapping_synthetic.csv"].open(
-                newline="", encoding="utf-8-sig"
-            ) as source:
-                mapping_count = sum(1 for _ in csv.DictReader(source))
             if (
-                not CostType.objects.exists()
-                or not SupplierCountry.objects.exists()
-                or not mapping_count
-                or WHTMapping.objects.count() != mapping_count
-                or ImportBatch.objects.count() != 3
-                or ImportBatch.objects.filter(rows_read=0).exists()
-                or ImportBatch.objects.filter(rows_rejected__gt=0).exists()
+                CostType.objects.count() != 13
+                or CostType.objects.filter(active=True).count() != 13
+                or SupplierCountry.objects.count() != 2323
+                or WHTMapping.objects.count() != 47
+                or WHTMapping.objects.filter(
+                    status=WHTMapping.Status.APPROVED,
+                    effective_from=date(2024, 3, 1),
+                    effective_to=date(2027, 12, 1),
+                    approved_by=user,
+                    approved_at__isnull=False,
+                ).count() != 47
+                or MaterialData.objects.exists()
+                or OpenItem.objects.exists()
+                or ImportBatch.objects.exists()
+                or is_gl_account_eligible("210000")
+                or is_gl_account_eligible("229220")
+                or not is_gl_account_eligible("210020")
+                or not is_gl_account_eligible("570010")
             ):
-                raise CommandError("Synthetic fixture import was incomplete; initialization rolled back.")
-            user_model.objects.create_superuser(username=username, password=password)
-            marker.touch()
+                raise CommandError(
+                    "Synthetic UAT reference state is incomplete; "
+                    "initialization rolled back."
+                )
+
+        with marker.open("x", encoding="utf-8", newline="\n") as marker_file:
+            marker_file.write(MARKER_CONTENT)
 
         self.stdout.write(self.style.SUCCESS("Disposable demo database initialized."))

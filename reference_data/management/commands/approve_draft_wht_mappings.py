@@ -14,8 +14,8 @@ from reference_data.models import SupplierCountry, WHTMapping
 from reference_data.services import approve_wht_rule
 
 
-EXPECTED_APPROVED_COUNT = 3
-EXPECTED_DRAFT_COUNT = 44
+EXPECTED_APPROVED_COUNT = 0
+EXPECTED_DRAFT_COUNT = 47
 
 
 @dataclass
@@ -113,7 +113,9 @@ class Command(BaseCommand):
                     approved_ids.append(rule.pk)
 
                 if (
-                    WHTMapping.objects.filter(
+                    WHTMapping.objects.count()
+                    != EXPECTED_APPROVED_COUNT + EXPECTED_DRAFT_COUNT
+                    or WHTMapping.objects.filter(
                         status=WHTMapping.Status.APPROVED
                     ).count()
                     != EXPECTED_APPROVED_COUNT + EXPECTED_DRAFT_COUNT
