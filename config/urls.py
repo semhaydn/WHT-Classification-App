@@ -10,6 +10,7 @@ from transactions.views import (
     finalize_invoice_view,
     determine_wht_view,
     open_item_detail,
+    rerun_cost_type_recommendation,
     open_item_document,
     open_item_list,
     export_open_items,
@@ -54,6 +55,11 @@ urlpatterns = [
         name="import-batch-detail",
     ),
     path("open-items/", open_item_list, name="open-item-list"),
+    path(
+        "open-items/<int:pk>/rerun-ai-recommendation/",
+        rerun_cost_type_recommendation,
+        name="rerun-cost-type-recommendation",
+    ),
     path("open-items/export.xlsx", export_open_items, name="open-item-export"),
     path(
         "review-completed/",

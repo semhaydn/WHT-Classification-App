@@ -3,6 +3,8 @@ from django.contrib import admin
 from .permissions import has_role
 from .models import (
     AuditEvent,
+    CostTypeAISettings,
+    CostTypeRecommendation,
     ClassificationDecision,
     GLEligibility,
     LineExceptionRecord,
@@ -31,6 +33,36 @@ class ReadOnlyWorkflowAdmin(admin.ModelAdmin):
 
     def has_delete_permission(self, request, obj=None) -> bool:
         return False
+
+
+@admin.register(CostTypeAISettings)
+class CostTypeAISettingsAdmin(admin.ModelAdmin):
+    fields = ("enabled",)
+
+    def has_module_permission(self, request) -> bool:
+        return has_role(request.user, "Administrator")
+
+    def has_view_permission(self, request, obj=None) -> bool:
+        return self.has_module_permission(request)
+
+    def has_change_permission(self, request, obj=None) -> bool:
+        return self.has_module_permission(request)
+
+    def has_add_permission(self, request) -> bool:
+        return self.has_module_permission(request) and not CostTypeAISettings.objects.exists()
+
+    def has_delete_permission(self, request, obj=None) -> bool:
+        return False
+
+    def save_model(self, request, obj, form, change) -> None:
+        obj.pk = 1
+        super().save_model(request, obj, form, change)
+
+
+@admin.register(CostTypeRecommendation)
+class CostTypeRecommendationAdmin(ReadOnlyWorkflowAdmin):
+    list_display = ("open_item", "model_identifier", "created_at")
+    search_fields = ("open_item__accounting_document_number",)
 
 
 @admin.register(GLEligibility)

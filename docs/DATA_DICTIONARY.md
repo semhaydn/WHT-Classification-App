@@ -71,6 +71,9 @@ fixture.
 | OpenItem | One entity + accounting document + line; database unique constraint | Source identifiers remain strings. A document can contain multiple accounting lines. |
 | WHTMapping | One Supplier + Country + Cost Type + version; unique constraint includes `version` | Only approved rows participate in matching. Selection uses latest approved version, not Posting Date. |
 | HistoricalCostTypeSuggestion | One source-batch + source-row | Not a Final Cost Type decision or active ML prediction. |
+| CostTypeRecommendation | One generated result for one OpenItem | Ranked code/name/reason snapshots, abstention reason, model identifier and creation time; latest is ordered by timestamp and ID. |
+| AutomaticCostTypeRecommendationClaim | At most one per OpenItem | Durable claim prevents repeated automatic attempts; manual re-runs are independent. |
+| CostTypeAISettings | One application-wide setting | Database switch defaults off; the environment safety gate must also be enabled. |
 
 Material matching uses OpenItem Purchasing Document + Purchasing Document
 Item to locate MaterialData Purchasing Document + Item. No/one/multiple
@@ -90,6 +93,7 @@ line arbitrarily.
 | Source purchasing | `MaterialData` | Purchasing document/item, material, descriptions, plant/organization, order values and currency |
 | Reference | `SupplierCountry`, `CostType`, `WHTMapping` | Supplier country; active Cost Type; WHT supplier/country/category/version, rate, effective metadata, status, approver |
 | Human classification | `ClassificationDecision` | Optional suggested Cost Type, required Final Cost Type, method, reason, actor/time, current marker |
+| AI recommendation history | `CostTypeRecommendation`, `AutomaticCostTypeRecommendationClaim` | Per-line ranked result snapshots, model/time, and automatic-attempt claim; never a human decision |
 | Derived tax result | `WHTDetermination` | Status, candidate count, matched mapping, Cost Type/supplier/country/rule/rate/base/amount/currency snapshots, source, version, actor/time |
 | Match history | `MaterialMatch` | Match status, candidate count, selected material when unique, checked time |
 | Review and exceptions | `ReviewAction`, `LineExceptionRecord` | Review action/comments; user flag or Administrator exclusion and resolution |

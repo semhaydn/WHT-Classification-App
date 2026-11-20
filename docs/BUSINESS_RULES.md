@@ -19,6 +19,9 @@ not tax advice. Do not infer additional tax rules from synthetic examples.
   optional AI recommendation, are not final decisions. A human must select or
   confirm the Final Cost Type. An AI suggestion never replaces an existing
   human decision.
+- Stored AI recommendations remain available when AI is disabled or source
+  data changes. Only an explicit re-run creates a subsequent recommendation;
+  it does not modify previous results or a human decision.
 - A MaterialData match can supply purchasing text used as Cost Description; it
   does not itself assign a Final Cost Type.
 

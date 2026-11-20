@@ -254,6 +254,53 @@ class OpenItem(models.Model):
         return is_open_item_classifiable(self)
 
 
+class CostTypeAISettings(models.Model):
+    enabled = models.BooleanField(default=False)
+
+    class Meta:
+        verbose_name = "AI Cost Type recommendation setting"
+        verbose_name_plural = "AI Cost Type recommendation setting"
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(pk=1),
+                name="single_cost_type_ai_setting",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return "AI Cost Type recommendations"
+
+
+class CostTypeRecommendation(models.Model):
+    open_item = models.ForeignKey(
+        OpenItem,
+        on_delete=models.CASCADE,
+        related_name="cost_type_recommendations",
+    )
+    recommendations = models.JSONField(default=list)
+    abstain_reason = models.TextField(blank=True)
+    model_identifier = models.CharField(max_length=255, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(
+                fields=["open_item", "-created_at", "-id"],
+                name="cost_type_ai_latest_idx",
+            )
+        ]
+
+
+class AutomaticCostTypeRecommendationClaim(models.Model):
+    open_item = models.OneToOneField(
+        OpenItem,
+        on_delete=models.CASCADE,
+        related_name="automatic_cost_type_recommendation_claim",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
 class GLEligibility(models.Model):
     gl_account = models.CharField(max_length=50, unique=True)
     is_eligible = models.BooleanField(default=True)

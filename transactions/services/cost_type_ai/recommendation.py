@@ -1,5 +1,13 @@
+from django.conf import settings
+
 from reference_data.models import CostType
-from transactions.models import MaterialData, OpenItem
+from transactions.models import (
+    AutomaticCostTypeRecommendationClaim,
+    CostTypeAISettings,
+    CostTypeRecommendation as StoredCostTypeRecommendation,
+    MaterialData,
+    OpenItem,
+)
 
 from .openai_provider import OpenAICostTypeRecommendationProvider
 from .provider import (
@@ -8,7 +16,56 @@ from .provider import (
     CostTypeRecommendation,
     CostTypeRecommendationProvider,
     RecommendationResult,
+    RecommendationUnavailable,
 )
+
+
+def recommendations_enabled() -> bool:
+    return (
+        settings.LLM_COST_TYPE_RECOMMENDATIONS_ENABLED
+        and CostTypeAISettings.objects.filter(pk=1, enabled=True).exists()
+    )
+
+
+def store_recommendation(
+    open_item: OpenItem,
+    matched_material: MaterialData | None,
+) -> StoredCostTypeRecommendation:
+    if not recommendations_enabled():
+        raise RecommendationUnavailable("AI Cost Type recommendations are disabled.")
+    result = recommend_cost_types(open_item, matched_material)
+    return StoredCostTypeRecommendation.objects.create(
+        open_item=open_item,
+        recommendations=[
+            {
+                "code": candidate.cost_type.code,
+                "name": candidate.cost_type.name,
+                "reason": candidate.reason,
+            }
+            for candidate in result.recommendations
+        ],
+        abstain_reason=result.abstain_reason,
+        model_identifier=settings.OPENAI_COST_TYPE_MODEL,
+    )
+
+
+def automatic_recommendation(
+    open_item: OpenItem,
+    matched_material: MaterialData | None,
+) -> StoredCostTypeRecommendation | None:
+    latest = open_item.cost_type_recommendations.first()
+    if latest is not None or not recommendations_enabled():
+        return latest
+    _, created = AutomaticCostTypeRecommendationClaim.objects.get_or_create(
+        open_item=open_item,
+    )
+    if not created:
+        return open_item.cost_type_recommendations.first()
+    # A manual re-run may have completed while the claim was being acquired.
+    latest = open_item.cost_type_recommendations.first()
+    if latest is not None:
+        return latest
+    return store_recommendation(open_item, matched_material)
 
 
 def _classification_context(

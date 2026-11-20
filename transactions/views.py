@@ -23,6 +23,7 @@ from .forms import (
     WHTExceptionResolutionForm,
 )
 from .models import (
+    AutomaticCostTypeRecommendationClaim,
     AuditEvent,
     ImportBatch,
     ImportUploadSession,
@@ -39,7 +40,11 @@ from .services.import_center import (
 )
 from .services.classification import complete_classification, save_final_classification
 from .services.cost_type_ai.provider import RecommendationUnavailable
-from .services.cost_type_ai.recommendation import recommend_cost_types
+from .services.cost_type_ai.recommendation import (
+    automatic_recommendation,
+    recommendations_enabled,
+    store_recommendation,
+)
 from .services.material_matching import get_stored_material_match
 from .services.review import finalize_invoice
 from .services.wht_determination import determine_wht
@@ -479,6 +484,19 @@ def dashboard(request: HttpRequest) -> HttpResponse:
     )
 
 
+def _can_recommend_cost_type(open_item: OpenItem, current_decision) -> bool:
+    return (
+        current_decision is None
+        and open_item.status
+        in (
+            OpenItem.Status.NEW,
+            OpenItem.Status.IN_CLASSIFICATION,
+            OpenItem.Status.RETURNED,
+        )
+        and open_item.is_classifiable
+    )
+
+
 @role_required("Transaction User", "Administrator")
 def open_item_detail(request: HttpRequest, pk: int) -> HttpResponse:
     open_item = get_object_or_404(OpenItem, pk=pk)
@@ -501,6 +519,12 @@ def open_item_detail(request: HttpRequest, pk: int) -> HttpResponse:
         .first()
     )
     latest_wht = open_item.wht_determinations.first()
+    ai_recommendation = open_item.cost_type_recommendations.first()
+    ai_recommendation_unavailable = False
+    can_recommend = (
+        recommendations_enabled()
+        and _can_recommend_cost_type(open_item, current_decision)
+    )
     if request.method == "POST":
         form = ClassificationDecisionForm(request.POST)
         if form.is_valid():
@@ -517,23 +541,14 @@ def open_item_detail(request: HttpRequest, pk: int) -> HttpResponse:
             )
             return redirect("open-item-detail", pk=open_item.pk)
     else:
-        ai_recommendation = None
-        ai_recommendation_unavailable = False
-        can_recommend = (
-            settings.LLM_COST_TYPE_RECOMMENDATIONS_ENABLED
-            and current_decision is None
-            and open_item.status
-            in (
-                OpenItem.Status.NEW,
-                OpenItem.Status.IN_CLASSIFICATION,
-                OpenItem.Status.RETURNED,
-            )
-            and open_item.is_classifiable
-            and has_role(request.user, "Transaction User", "Administrator")
-        )
-        if can_recommend:
+        if (
+            request.method == "GET"
+            and can_recommend
+            and ai_recommendation is None
+            and not request.GET.get("ai_skip_auto")
+        ):
             try:
-                ai_recommendation = recommend_cost_types(
+                ai_recommendation = automatic_recommendation(
                     open_item,
                     matched_material,
                 )
@@ -544,7 +559,10 @@ def open_item_detail(request: HttpRequest, pk: int) -> HttpResponse:
                 )
                 ai_recommendation_unavailable = True
         recommended_cost_type = (
-            ai_recommendation.recommendations[0].cost_type
+            CostType.objects.filter(
+                code=ai_recommendation.recommendations[0]["code"],
+                active=True,
+            ).first()
             if ai_recommendation and ai_recommendation.recommendations
             else None
         )
@@ -573,9 +591,6 @@ def open_item_detail(request: HttpRequest, pk: int) -> HttpResponse:
                 "recommendation_signature": recommendation_signature,
             }
         )
-    if request.method == "POST":
-        ai_recommendation = None
-        ai_recommendation_unavailable = False
     return render(
         request,
         "transactions/open_item_detail.html",
@@ -587,6 +602,13 @@ def open_item_detail(request: HttpRequest, pk: int) -> HttpResponse:
             "classification_form": form,
             "ai_recommendation": ai_recommendation,
             "ai_recommendation_unavailable": ai_recommendation_unavailable,
+            "can_recommend_ai": can_recommend,
+            "automatic_recommendation_claimed": (
+                ai_recommendation is None
+                and AutomaticCostTypeRecommendationClaim.objects.filter(
+                    open_item=open_item
+                ).exists()
+            ),
             "current_decision": current_decision,
             "decision_history": open_item.classification_decisions.select_related(
                 "final_cost_type"
@@ -629,6 +651,36 @@ def open_item_detail(request: HttpRequest, pk: int) -> HttpResponse:
             "completion_blockers": document_completion_blockers(open_item),
         },
     )
+
+
+@role_required("Transaction User", "Administrator")
+def rerun_cost_type_recommendation(request: HttpRequest, pk: int) -> HttpResponse:
+    if request.method != "POST":
+        from django.http import HttpResponseNotAllowed
+
+        return HttpResponseNotAllowed(["POST"])
+    open_item = get_object_or_404(OpenItem, pk=pk)
+    current_decision = open_item.classification_decisions.filter(is_current=True).first()
+    if not recommendations_enabled() or not _can_recommend_cost_type(
+        open_item, current_decision
+    ):
+        messages.error(request, "AI recommendations are disabled or this line is not eligible.")
+        return redirect("open-item-detail", pk=pk)
+    material_match = get_stored_material_match(open_item)
+    matched_material = (
+        material_match.candidates[0] if material_match.status == "MATCHED" else None
+    )
+    try:
+        store_recommendation(open_item, matched_material)
+    except RecommendationUnavailable as error:
+        logger.warning(
+            "AI Cost Type recommendation unavailable (%s).",
+            type(error).__name__,
+        )
+        messages.error(request, "The AI recommendation is temporarily unavailable.")
+        return redirect(f"{reverse('open-item-detail', args=[pk])}?ai_skip_auto=1")
+    messages.success(request, "A new AI Cost Type recommendation was generated.")
+    return redirect("open-item-detail", pk=pk)
 
 
 @role_required("Administrator")

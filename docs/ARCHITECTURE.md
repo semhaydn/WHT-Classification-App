@@ -50,11 +50,12 @@ validation, messages, and rendering; templates do not calculate tax.
 | Source data | `OpenItem`, `MaterialData` | Imported accounting lines and purchasing-document items |
 | Human classification | `ClassificationDecision` | Current and historical Final Cost Type decisions, actor, method, and reason |
 | Historical suggestions | `HistoricalCostTypeSuggestion` | Imported historical examples kept separate from human decisions |
+| AI recommendations | `CostTypeRecommendation`, `AutomaticCostTypeRecommendationClaim` | Ranked result snapshots and per-line automatic-attempt claim; independent of human decisions |
 | Derived result | `WHTDetermination` | Versioned persisted WHT result and snapshots of inputs/rule values |
 | Review and audit | `ReviewAction`, `AuditEvent`, `LineExceptionRecord` | Workflow actions, audit evidence, flags, and line exclusions |
 | Historical review | `ReviewDocumentSnapshot`, `ReviewLineCalculationSnapshot` | Captured invoice- and line-level completion evidence |
 | Import operations | `ImportBatch`, `ImportValidationError`, `ImportUploadSession` | Batch counts, row errors, and private upload-preview lifecycle |
-| Workflow configuration | `GLEligibility` | Administrator-managed G/L eligibility; it does not rewrite existing decisions |
+| Workflow configuration | `GLEligibility`, `CostTypeAISettings` | Administrator-managed G/L eligibility and AI generation switch; neither rewrites decisions |
 
 Important database keys are described in [the data dictionary](DATA_DICTIONARY.md).
 The WHT and classification rules are specified in
@@ -68,10 +69,19 @@ The WHT and classification rules are specified in
   functions. Django admin keeps workflow, determination, and audit records
   read-only.
 - Optional AI Cost Type recommendations use a separate OpenAI Responses API
-  service. The feature is disabled by default, does not create decisions or
-  audit events when a line is opened, and can only populate the existing
-  suggested Cost Type field when a human submits the classification form.
-  Final Cost Type and WHT behavior remain human-controlled.
+  service. Both the environment safety gate and the database switch must be
+  enabled. The first eligible opening claims an automatic attempt and saves a
+  result; subsequent visits reuse the latest result. A POST re-run appends a
+  result independently of the automatic claim. Failed or interrupted automatic
+  attempts require an explicit re-run. Results stay visible when disabled and
+  are not invalidated when inputs change. Opening a line does not create
+  decisions or audit events; the signed suggestion is recorded on human
+  submission only. Final Cost Type and WHT remain human-controlled.
+- Automatic claims rely on a database uniqueness constraint committed before
+  the external call, including with the checked-in SQLite configuration.
+  In-flight calls cannot be cancelled reliably when the switch changes, and
+  an external request interrupted by a crash cannot guarantee exactly-once
+  billing. The provider retains its bounded SDK retry.
 - Active Invoices are derived from source lines and exclude documents with a
   current completed snapshot. Completed Invoices read the current snapshot.
   Lists and Excel exports do not recalculate WHT.
