@@ -8,11 +8,16 @@ from django.core.exceptions import ImproperlyConfigured
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 DEPLOYMENT_ENVIRONMENT = os.environ.get("DJANGO_ENVIRONMENT", "development")
+HEROKU_DEMO_MODE = os.environ.get("HEROKU_DEMO_MODE", "false").lower() == "true"
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY")
 if not SECRET_KEY and DEPLOYMENT_ENVIRONMENT == "production":
     raise ImproperlyConfigured("DJANGO_SECRET_KEY must be set in production.")
 SECRET_KEY = SECRET_KEY or secrets.token_urlsafe(50)
 DEBUG = os.environ.get("DJANGO_DEBUG", "False").lower() == "true"
+if HEROKU_DEMO_MODE and (DEPLOYMENT_ENVIRONMENT != "production" or DEBUG):
+    raise ImproperlyConfigured(
+        "HEROKU_DEMO_MODE requires DJANGO_ENVIRONMENT=production and DEBUG=False."
+    )
 ALLOWED_HOSTS = [
     host
     for host in os.environ.get(
@@ -46,6 +51,8 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
+if DEPLOYMENT_ENVIRONMENT == "production":
+    MIDDLEWARE.insert(1, "whitenoise.middleware.WhiteNoiseMiddleware")
 
 ROOT_URLCONF = "config.urls"
 
@@ -72,7 +79,11 @@ ASGI_APPLICATION = "config.asgi.application"
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
+        "NAME": (
+            Path(tempfile.gettempdir()) / "wht-heroku-demo.sqlite3"
+            if HEROKU_DEMO_MODE
+            else BASE_DIR / "db.sqlite3"
+        ),
     }
 }
 
@@ -84,6 +95,12 @@ USE_I18N = True
 USE_TZ = True
 
 STATIC_URL = "static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
+if HEROKU_DEMO_MODE:
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    SECURE_SSL_REDIRECT = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
 LOGIN_URL = "/login/"
 LOGIN_REDIRECT_URL = "/dashboard/"
 LOGOUT_REDIRECT_URL = "/"
@@ -104,10 +121,10 @@ WHT_IMPORT_STAGING_TTL_HOURS = int(
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 OPENAI_COST_TYPE_MODEL = os.environ.get(
     "OPENAI_COST_TYPE_MODEL",
-    "gpt-5.6-luna",
+    "",
 )
 LLM_COST_TYPE_RECOMMENDATIONS_ENABLED = (
-    os.environ.get("LLM_COST_TYPE_RECOMMENDATIONS_ENABLED", "True").lower()
+    os.environ.get("LLM_COST_TYPE_RECOMMENDATIONS_ENABLED", "False").lower()
     == "true"
 )
 if WHT_IMPORT_MAX_FILE_SIZE <= 0 or WHT_IMPORT_STAGING_TTL_HOURS <= 0:

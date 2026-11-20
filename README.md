@@ -45,16 +45,31 @@ human selection becomes `final_cost_type`. The recommendation cannot determine
 WHT treatment, rates, or approvals. Existing human decisions are never replaced.
 Opening the page does not create a classification or audit record; the top
 recommendation is stored as the existing suggested Cost Type only when the
-human submits the form.
+human submits the form. A first eligible page visit also saves the AI result
+as a separate recommendation record. Later visits show the latest stored
+result without contacting OpenAI, even if source or reference data changes.
+An explicit **Re-run AI recommendation** creates a new record and preserves
+the previous results. Recommendations are advisory, not Final Cost Types.
 
-The feature is off by default. To enable it, install the declared requirements
-and configure these environment variables for the Django process:
+The feature is off by default. To enable it, apply the database migrations,
+install the declared requirements and configure these environment variables
+for the Django process:
 
 - `OPENAI_API_KEY`: API key; keep it in a Codespaces secret or other secret
   store, never in source control or a committed `.env` file.
 - `OPENAI_COST_TYPE_MODEL`: a model identifier enabled for the API account.
 - `LLM_COST_TYPE_RECOMMENDATIONS_ENABLED=True`: explicit opt-in. The default is
-  `False`.
+  `False`; this is an additional deployment-level safety gate.
+
+An Administrator must also enable **AI Cost Type recommendation setting** in
+Django Admin. The database setting defaults to off and takes effect without a
+restart. Both switches must be on to generate recommendations. Disabling either
+switch leaves existing recommendations visible and intact; a request already
+in flight may finish. The API key and model remain environment-only.
+
+The values in `.env.example` illustrate an explicit development/demo opt-in;
+Django does not automatically load this file. Supply a key separately and
+choose a model available to the API account.
 
 The API request contains only the G/L account and description, accounting-line
 text and assignment, material description, matched MaterialData short text and
@@ -73,8 +88,13 @@ incomplete responses, and invalid recommendations leave manual classification
 available. Only active database Cost Types are accepted; duplicates and
 unknown/inactive codes are discarded. Recommendations are not calibrated
 probabilities and do not display confidence percentages. To disable the
-feature immediately, set `LLM_COST_TYPE_RECOMMENDATIONS_ENABLED=False` and
-restart the Django process. No schema changes or migrations are required.
+feature, turn off the database setting, or set
+`LLM_COST_TYPE_RECOMMENDATIONS_ENABLED=False` and restart the Django process.
+The first automatic attempt is claimed persistently before calling OpenAI.
+If it fails or the process stops mid-request, refreshes do not retry it;
+an eligible user can explicitly re-run it. This prevents refresh-driven
+retries, but a crash during an external call cannot guarantee exactly-once
+billing. The existing bounded SDK retry can also issue another HTTP request.
 
 In a Codespaces terminal, configure `OPENAI_API_KEY` as a Codespaces secret
 before starting the app, then set the model and flag and launch the preview:
@@ -83,13 +103,16 @@ before starting the app, then set the model and flag and launch the preview:
 python -m pip install -r requirements.txt
 export OPENAI_COST_TYPE_MODEL="<model-id-enabled-for-your-account>"
 export LLM_COST_TYPE_RECOMMENDATIONS_ENABLED=True
+python manage.py migrate
 python manage.py check
 bash scripts/start_codespaces_preview.sh
 ```
 
-To turn recommendations off, run `export LLM_COST_TYPE_RECOMMENDATIONS_ENABLED=False`
-and restart the preview process. The model variable is intentionally not
-defaulted to a model that may be unavailable to a particular API account.
+Enable the database setting in Django Admin after starting the application.
+To turn recommendations off, disable that setting, or run
+`export LLM_COST_TYPE_RECOMMENDATIONS_ENABLED=False` and restart the preview
+process. The model variable is intentionally not defaulted to a model that may
+be unavailable to a particular API account.
 
 ## Application access
 
@@ -215,13 +238,117 @@ python manage.py check
 python -m pytest
 ```
 
-Start the development server:
+Start the development server with the development environment explicitly
+enabled. `DJANGO_DEBUG` intentionally defaults to `False`; with that default,
+`runserver` does not serve Django Admin static files, so the Admin page can
+load without its CSS or JavaScript.
 
 ```powershell
+$env:DJANGO_ENVIRONMENT = "development"
+$env:DJANGO_DEBUG = "true"
 python manage.py runserver
 ```
 
-Open `http://127.0.0.1:8000/` to view the application.
+Open `http://127.0.0.1:8000/` to view the application. In GitHub Codespaces,
+use the preview script below instead; do not enable `DEBUG` in production.
+
+## Temporary Heroku Demo Deployment
+
+This is a disposable, single-user prototype for synthetic data only. It is not
+an approved production deployment. It uses one web dyno, Gunicorn, WhiteNoise,
+and an ephemeral SQLite database; it does not use Heroku Postgres.
+
+### Configure and deploy
+
+1. Install the Heroku CLI and sign in yourself. Create an app with a unique
+   name, then note its **actual HTTPS hostname** from `heroku domains`:
+
+   ```bash
+   heroku login
+   heroku create YOUR-UNIQUE-APP-NAME
+   heroku domains --app YOUR-UNIQUE-APP-NAME
+   ```
+
+2. In the Heroku dashboard, open the app's **Settings → Reveal Config Vars**.
+   Set the following before deploying (replace the hostname with the one
+   printed above, without a scheme or trailing slash):
+
+   | Config var | Value |
+   | --- | --- |
+   | `HEROKU_DEMO_MODE` | `true` |
+   | `DJANGO_ENVIRONMENT` | `production` |
+   | `DJANGO_DEBUG` | `false` |
+   | `DJANGO_SECRET_KEY` | A new, long, random secret unique to this app |
+   | `DJANGO_ALLOWED_HOSTS` | The exact Heroku hostname |
+   | `DJANGO_CSRF_TRUSTED_ORIGINS` | `https://` followed by that hostname |
+   | `WHT_IMPORT_STAGING_DIR` | `/tmp/wht-import-staging` |
+   | `DJANGO_SUPERUSER_USERNAME` | Your demo login name |
+   | `DJANGO_SUPERUSER_PASSWORD` | A strong, unique demo password |
+
+   To generate a secret locally, run
+   `python -c "import secrets; print(secrets.token_urlsafe(50))"` and paste it
+   directly into the dashboard. Do not commit credentials or put them in
+   `.env.example`. The settings file does not automatically load `.env` files.
+   The password remains a Heroku config var because the account must be recreated
+   when the dyno filesystem is replaced; remove the app and its config vars when
+   the demo ends. Use HTTPS and do not share the demo credentials.
+
+   AI recommendations are off by default. Only if intentionally enabling them
+   for synthetic data, also set `OPENAI_API_KEY`, `OPENAI_COST_TYPE_MODEL`,
+   and `LLM_COST_TYPE_RECOMMENDATIONS_ENABLED=true`, then enable the database
+   switch in Django Admin. The database switch is reset on dyno replacement.
+
+3. Commit the intended deployment changes and any other required changes on
+   your chosen branch yourself; Heroku deploys committed content, not
+   uncommitted Codespace files. In the Heroku dashboard's **Deploy** tab,
+   connect this GitHub repository and manually deploy that branch. Ensure the
+   branch includes all required migrations. Alternatively, with the Heroku Git
+   remote configured, run `git push heroku YOUR-BRANCH:main`. No deployment is
+   performed by the setup in this repository.
+4. Ensure exactly one web dyno is running:
+
+   ```bash
+   heroku ps:scale web=1 --app YOUR-UNIQUE-APP-NAME
+   heroku logs --tail --app YOUR-UNIQUE-APP-NAME
+   ```
+
+   On the web dyno, the opt-in startup command runs migrations and, on a fresh
+   demo database, creates the superuser and imports the checked-in synthetic
+   reference data, draft WHT mappings, MaterialData, historical suggestions,
+   and Open Items. It does not reimport or reset an initialized database on a
+   web-process restart. Django's Admin static files are collected during the
+   Heroku build and served by WhiteNoise. If initialization fails, inspect the
+   logs and fix the configuration before retrying.
+5. Open the HTTPS address shown by `heroku domains`, sign in with the demo
+   superuser, and visit `/admin/` or the application dashboard. Imported WHT
+   mappings are **drafts**; an Administrator must add effective dates and
+   approve any rules needed for the demo. They are never automatically
+   approved. The two intentionally incomplete supplier-country fixture rows
+   are reported and rejected by the existing importer.
+
+   The separate `data/uat_scenarios/realistic_v1/` files can be uploaded via
+   Import Center after signing in (MaterialData before Open Items); do not
+   upload `uat_scenarios.csv`. Their expected WHT scenarios depend on the
+   approved reference mappings used when the dataset was generated and are not
+   guaranteed by the fresh draft-only fixture import.
+
+### Important limitations
+
+- The SQLite database, users, approvals, uploaded files, and all demo changes
+  disappear when Heroku replaces or restarts the dyno, including on redeploys,
+  configuration changes, and routine dyno cycling. A fresh database is
+  initialized on the next web startup; manual approvals and uploads must be
+  repeated.
+- Heroku one-off dynos have separate filesystems. **Do not use `heroku run
+  python manage.py migrate`, `createsuperuser`, or import commands expecting
+  them to modify the running web dyno's database.** The opt-in web startup runs
+  migrations and imports instead. Do not run multiple web dynos or workers.
+- Upload previews in `/tmp/wht-import-staging` are also ephemeral and can be
+  lost during dyno replacement. This setup has no durable backups or recovery;
+  never upload real company or tax-sensitive data.
+- With `HEROKU_DEMO_MODE` unset or false, the web startup does not migrate,
+  create users, or load fixtures, and the normal SQLite database location and
+  development workflow remain unchanged.
 
 ## GitHub Codespaces preview (development only)
 

@@ -17,6 +17,10 @@ change.
 - `templates/` renders the dashboard, invoice lists, transaction details,
   exceptions, and Import Center screens.
 - pytest and pytest-django are used for tests. `openpyxl` creates Excel exports.
+- The optional `HEROKU_DEMO_MODE` starts one Gunicorn worker with WhiteNoise
+  and initializes a separate ephemeral SQLite database from synthetic fixtures.
+  It is strictly a disposable demo; normal development database behavior is
+  unchanged. See [the deployment instructions](../README.md#temporary-heroku-demo-deployment).
 
 Business operations are primarily implemented in `transactions/services/` and
 `reference_data/services.py`. Views handle HTTP requests, access checks, form
